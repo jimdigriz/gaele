@@ -16,7 +16,7 @@ endif
 	gcloud --project=$(PROJECT_ID) app deploy --version $(VERSION_ID)
 
 env/.stamp:
-	rm -rf env
+	@rm -rf env
 	virtualenv env 
 	@touch $@
 
