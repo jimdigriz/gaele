@@ -4,7 +4,7 @@ all: env/.stamp lib/.stamp
 
 .PHONY: clean
 clean:
-	rm -rf env lib
+	rm -rf env lib $(wildcard *.pyc)
 
 .PHONY: deploy
 deploy: VERSION_ID = $(shell git rev-parse --short HEAD)
