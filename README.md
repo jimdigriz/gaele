@@ -35,7 +35,7 @@ You will also require `make` to be installed.
 
 # Deploy
 
-...
+    make deploy PROJECT_ID=project-123456
 
 ## HTTP Server on GCE
 
