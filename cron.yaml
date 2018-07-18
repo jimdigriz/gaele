@@ -1,0 +1,4 @@
+cron:
+- url: /08dd45ed-bbf1-43f5-add7-11a4765c44a9
+  target: beta
+  schedule: every 24 hours
