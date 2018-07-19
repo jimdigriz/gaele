@@ -150,6 +150,7 @@ class LE_start(BaseHandler):
       rsa_file.close()
 
       logging.info('RSA generated')
+
     signer = PKCS1_v1_5.new(rsa)
 
     self.response.set_status(204)
@@ -157,6 +158,7 @@ class LE_start(BaseHandler):
 class LE_noop(BaseHandler):
   def get(self):
     super(LE_noop, self).get()
+
     self.response.set_status(204)
 
 class LE_cron(BaseHandler):
