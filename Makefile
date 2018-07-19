@@ -1,6 +1,13 @@
+DOMAINS = example.com
+
 .PHONY: all
+all: ENV_DOMAINS = --env_var DOMAINS="$(DOMAINS)"
 all: .storage/.stamp | env/.stamp lib/.stamp
-	. env/bin/activate && dev_appserver.py app.yaml --log_level debug --storage_path=.storage
+	. env/bin/activate \
+		&& dev_appserver.py app.yaml \
+			--log_level debug \
+			--storage_path=.storage \
+			$(ENV_DOMAINS)
 
 .PHONY: clean
 clean:

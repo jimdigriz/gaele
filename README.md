@@ -34,22 +34,38 @@ You will also require `make` to be installed.
 
     make deploy PROJECT_ID=project-123456
 
-There is a [Google Datastore](https://cloud.google.com/appengine/docs/standard/python/datastore/) objected with the key 'configuration' which contains the following:
+## Configuration
 
- * **`created`:** datetime when the configuration was created (read-only/informational)
- * **`modified`:** datetime when the configuration was last modified (read-only/informational)
+Configuration of the project is maintained through a [Google Datastore](https://cloud.google.com/appengine/docs/standard/python/datastore/) object with the key `configuration`.
+
+The 'configuration' key in the Datastore contains the following:
+
  * **`directory` (default is [LE staging](https://letsencrypt.org/docs/staging-environment/)):** URL pointing to the configuration directory
      * **staging [default]:** `https://acme-staging-v02.api.letsencrypt.org/directory`
      * **production:** `https://acme-v02.api.letsencrypt.org/directory`
- * **`alg` (default: 'RS256' [no support for others](https://gitlab.com/coremem/gaele/issues/2)):** algorithm use
+ * **`domains`:** text list of domains to run the service for
+     * this is safe to edit throughout the lifecycle of the deployment without impact
+
+After the deploy you should set `domains` to the list of domains you want to service and set `directory` to the production server URL.
+
+### Advanced
+
+Other properties are:
+
+ * **`alg` (default: 'RS256'):** algorithm to use ([DO NOT EDIT](https://gitlab.com/coremem/gaele/issues/2))
  * **`keysize` (default: 2048):** key length of public key to generate
  * **`period` (default: 0):** validatity time in seconds to request for the certificate for
      * **N.B.** Let's Encrypt does not support [`notBefore` or `notAfter`](https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-7.1.3) so this should be left set to `0`
- * **`key`:** blob of key (read-only)
- * **`account`:** text of the URL to the account for this service (read-only/informational)
- * **`domains`:** text list of domains to run the service for
+ * **`account`:** text of the URL to the account for this service
+     * typically this is not edited but needs to be blanked when amending `directory` if already set
 
-After the deploy you should change `domains` and set `directory` to the production server URL.
+#### Informational
+
+These must not be edited and should be treated read-only:
+
+ * **`created`:** datetime when the configuration was created (DO NOT EDIT)
+ * **`modified`:** datetime when the configuration was last modified (DO NOT EDIT)
+ * **`key`:** blob of key (DO NOT EDIT)
 
 ## HTTP Server on GCE
 

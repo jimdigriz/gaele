@@ -40,7 +40,6 @@ class ACME():
   def __init__(self, configuration):
     logging.info('ACME init')
 
-    self.account = configuration.account
     self.alg = configuration.alg
     self.key = RSA.importKey(configuration.key)
     self.signer = PKCS1_v1_5.new(self.key)
@@ -63,8 +62,18 @@ class ACME():
     self.nonce = nonce_req.headers['replay-nonce']
     logging.debug('ACME nonce initialised: {}'.format(self.nonce))
 
+    # done here and not in StartHandler as it would make changing `directory` difficult
+    if not configuration.account:
+      account_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
+      if account_req.status_code >= 400:
+        raise RuntimeError('newAccount returned HTTP code {}'.format(str(account_req.status_code)))
+      configuration.account = account_req.headers['location']
+      configuration.put()
+      logging.info('ACME newAccount: {}'.format(configuration.account))
+    self.account = configuration.account
+
   def request(self, key, payload):
-    logging.info('ACME request({}, {})'.format(key, payload))
+    logging.info("ACME request('{}', '{}')".format(key, payload))
 
     if not key in self.directory:
       raise AssertionError
@@ -72,7 +81,7 @@ class ACME():
     return self.fetch(self.directory[key], payload)
 
   def fetch(self, url, payload):
-    logging.info('ACME fetch({}, {})'.format(url, payload))
+    logging.info("ACME fetch('{}', '{}')".format(url, payload))
 
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.2
     protected = {
@@ -80,7 +89,7 @@ class ACME():
        'nonce': self.nonce,
        'url': url
     }
-    if self.account:
+    if hasattr(self, 'account'):
       protected['kid'] = self.account
     else:
       # https://tools.ietf.org/html/rfc7638#section-3.2
@@ -113,7 +122,7 @@ class ACME():
 
     self.nonce = result.headers['replay-nonce']
 
-    logging.debug('ACME fetch({}, {}): {}'.format(url, payload, json.dumps(OrderedDict([
+    logging.debug('ACME fetch: {}'.format(json.dumps(OrderedDict([
       ('code', result.status_code),
       ('headers', dict(result.headers)),
       ('content', result.content)
@@ -143,7 +152,8 @@ class GAELE_StartHandler(GAELE_BaseHandler):
     configuration = configuration_key.get()
     if not configuration:
       logging.info('configuration init')
-      configuration = Configuration(id=configuration_key.id())
+      domains = os.environ.get('DOMAINS', '').split()
+      configuration = Configuration(id=configuration_key.id(), domains=domains)
       configuration.put()
 
     if not configuration.key:
@@ -154,15 +164,8 @@ class GAELE_StartHandler(GAELE_BaseHandler):
       configuration.key = key.exportKey()
       configuration.put()
 
-    if not configuration.account:
-      acme = ACME(configuration)
-      account_req = acme.request('newAccount', { 'termsOfServiceAgreed': True })
-      if account_req.status_code >= 400:
-        raise RuntimeError('newAccount returned HTTP code {}'.format(str(account_req.status_code)))
-      configuration.account = account_req.headers['location']
-      configuration.put()
-
-    logging.info('account: {}'.format(configuration.account))
+    if configuration.account:
+      logging.info('account: {}'.format(configuration.account))
 
     self.response.set_status(204)
 
@@ -176,9 +179,13 @@ class GAELE_CronHandler(GAELE_BaseHandler):
   def get(self):
     super(GAELE_CronHandler, self).get()
 
+    configuration = configuration_key.get()
+
+    if len(configuration.domains) == 0:
+      raise RuntimeError('domains list is empty')
+
     if not 'x-appengine-cron' in self.request.headers:
-      self.response.set_status(403)
-      return
+      raise RuntimeError('missing x-appengine-cron header')
 
     self.response.write('le cron')
 
