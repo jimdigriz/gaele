@@ -13,6 +13,13 @@ from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
 from Crypto.Util import number
 
+alg2keytype = {
+  'RS256': 'RSA'
+}
+
+def b64u_en(s):
+  return base64.urlsafe_b64encode(s).rstrip('=')
+
 class Configuration(ndb.Model):
   created = ndb.DateTimeProperty(auto_now_add=True)
   modified = ndb.DateTimeProperty(auto_now=True)
@@ -22,15 +29,7 @@ class Configuration(ndb.Model):
   alg = ndb.TextProperty(default='RS256', choices=['RS256'])
   account = ndb.TextProperty()
   domains = ndb.TextProperty(repeated=True)
-
-alg2keytype = {
-  'RS256': 'RSA'
-}
-
 configuration_key = ndb.Key('Configuration', 'configuration')
-
-def b64u_en(s):
-  return base64.urlsafe_b64encode(s).rstrip('=')
 
 class ACME():
   def __init__(self, configuration):
@@ -85,7 +84,7 @@ class ACME():
        'nonce': self.nonce,
        'url': url
     }
-    if hasattr(self, 'acct'):
+    if hasattr(self, 'account'):
       protected['kid'] = self.account
     else:
       # https://tools.ietf.org/html/rfc7638#section-3.2
@@ -126,7 +125,7 @@ class ACME():
 
     return result
 
-class BaseHandler(webapp2.RequestHandler):
+class GAELE_BaseHandler(webapp2.RequestHandler):
   def get(self):
     self.response.headers['x-request-log-id'] = os.environ.get('REQUEST_LOG_ID')
 
@@ -141,9 +140,9 @@ class BaseHandler(webapp2.RequestHandler):
     else:
         self.response.set_status(500)
 
-class LE_start(BaseHandler):
+class GAELE_StartHandler(GAELE_BaseHandler):
   def get(self):
-    super(LE_start, self).get()
+    super(GAELE_StartHandler, self).get()
 
     configuration = configuration_key.get()
     if not configuration:
@@ -161,15 +160,15 @@ class LE_start(BaseHandler):
 
     self.response.set_status(204)
 
-class LE_noop(BaseHandler):
+class GAELE_NOPHandler(GAELE_BaseHandler):
   def get(self):
-    super(LE_noop, self).get()
+    super(GAELE_NOPHandler, self).get()
 
     self.response.set_status(204)
 
-class LE_cron(BaseHandler):
+class GAELE_CronHandler(GAELE_BaseHandler):
   def get(self):
-    super(LE_cron, self).get()
+    super(GAELE_CronHandler, self).get()
 
     if not 'x-appengine-cron' in self.request.headers:
       self.response.set_status(403)
@@ -177,18 +176,18 @@ class LE_cron(BaseHandler):
 
     self.response.write('le cron')
 
-class LE(BaseHandler):
+class GAELE_ChallengeHandler(GAELE_BaseHandler):
   def get(self):
-    super(LE, self).get()
+    super(GAELE_ChallengeHandler, self).get()
 
     configuration = configuration_key.get()
 
     acme = ACME(configuration)
     neworder_req = acme.request('newOrder', {
-      'identifiers': {
+      'identifiers': [{
         'type': 'dns',
         'value': domain
-      } for domain in configuration.domains
+      } for domain in configuration.domains]
     })
     if neworder_req.status_code != 201:
       raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
@@ -206,8 +205,8 @@ class LE(BaseHandler):
     self.response.write('le')
 
 app = webapp2.WSGIApplication([
-  (r'^/_ah/start$', LE_start),
-  (r'^/_ah/.*$', LE_noop),
-  (r'^/cron$', LE_cron),
-  (r'^/\.well-known/acme-challenge/.*$', LE),
+  (r'^/_ah/start$', GAELE_StartHandler),
+  (r'^/_ah/.*$', GAELE_NOPHandler),
+  (r'^/cron$', GAELE_CronHandler),
+  (r'^/\.well-known/acme-challenge/.*$', GAELE_ChallengeHandler),
 ], debug=True)
