@@ -84,18 +84,18 @@ class ACME():
          ('n', b64u_en(number.long_to_bytes(rsa.n)))
       ])
     protected_b64u = b64u_en(json.dumps(protected))
-  
+
     payload_b64u = b64u_en(json.dumps(payload))
-  
+
     hash = SHA256.new(protected_b64u + '.' + payload_b64u)
     signature_b64u = b64u_en(signer.sign(hash))
-  
+
     payload = json.dumps({
        'protected': protected_b64u,
        'payload': payload_b64u,
        'signature': signature_b64u
     })
-  
+
     result = urlfetch.fetch(
       method=urlfetch.POST,
       headers={
@@ -112,7 +112,7 @@ class ACME():
       ('headers', dict(result.headers)),
       ('content', result.content)
     ]))))
-  
+
     return result
 
 class BaseHandler(webapp2.RequestHandler):
@@ -172,7 +172,7 @@ class LE_cron(BaseHandler):
 class LE(BaseHandler):
   def get(self):
     super(LE, self).get()
-   
+
     acme = ACME()
     neworder_req = acme.request('newOrder', {
       'identifiers': [
@@ -187,7 +187,7 @@ class LE(BaseHandler):
     neworder = json.loads(neworder_req.content)
     if not 'authorizations' in neworder:
       raise RuntimeError('newOrder returned no authorizations')
-    
+
     authz_req = acme.fetch(neworder['authorizations'][0], {
       'identifier': {
         'type': 'dns',
