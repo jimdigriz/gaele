@@ -47,8 +47,8 @@ Once you have deployed to GAE, you need to configure your HTTP servers to proxy 
 ### nginx
 
     location /.well-known/acme-challenge/ {
-        proxy_set_header [YOUR_PROJECT_ID].appspot.com/;
-        proxy_pass http://[YOUR_PROJECT_ID].appspot.com/;
+        proxy_set_header [YOUR_PROJECT_ID].appspot.com;
+        proxy_pass http://[YOUR_PROJECT_ID].appspot.com;
     }
 
 # Development
