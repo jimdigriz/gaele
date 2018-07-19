@@ -1,8 +1,8 @@
 [Let's Encrypt](https://letsencrypt.org/) Client for [Google Cloud Load Balancer](https://cloud.google.com/load-balancing/).
 
-[Google Cloud Platform](https://cloud.google.com/) does not support automatic provisioning and renewal of SSL certificates for their [Load Balancer](https://cloud.google.com/load-balancing/).  This project solves the problem by handling off the requests to your GCE instances for `/.well-known/acme-challenge` and proxying them to a Google App Engine service.
+[Google Cloud Platform](https://cloud.google.com/) does not support automatic provisioning and renewal of SSL certificates for their [Load Balancer](https://cloud.google.com/load-balancing/).  This project solves the problem by handling off the [Let's Encrypt](https://letsencrypt.org/) requests to from your GCE instances by proxying them to a Google App Engine service.
 
-This makes for a simple, fire-and-forget and cost effective deployment compared to the other convoluted solutions worked out by others.
+This makes for a simple, fire-and-forget and cost effective solution when compared to other existing documented approaches described by the community.
 
 ## Issues
 
