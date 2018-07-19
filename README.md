@@ -57,8 +57,8 @@ For this need to set up the [Local Development Server](https://cloud.google.com/
 
     make
 
-You can open the Admin Server UI by going to http://localhost:8000 in your browser.
+You can open the [Admin Server UI by going to http://localhost:8000](http://localhost:8000) in your browser.
 
 ## Cron
 
-To excercise the cron task can use the 'Run now' button in the 'Cron Jobs' section of the Admin Server UI.
+To excercise the cron task can use the 'Run now' button in the [Cron Jobs](http://localhost:8000/cron) section of the [Admin Server UI](http://localhost:8000).
