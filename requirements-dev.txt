@@ -1,0 +1,2 @@
+# https://cloud.google.com/appengine/docs/standard/python/tools/using-libraries-python-27#local_development
+pycrypto==2.6.1
