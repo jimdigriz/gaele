@@ -32,26 +32,28 @@ class ACME():
   def __init__(self):
     logging.info('ACME init')
 
-    discovery_url = os.environ.get('DISCOVERY')
-    if not discovery_url:
-      raise RuntimeError('missing DISCOVERY env')
-    discovery_req = urlfetch.fetch(discovery_url)
-    logging.debug('{} returned HTTP code {}: {}'.format(discovery_url, discovery_req.content))
-    if discovery_req.status_code != 200:
-      raise RuntimeError('DISCOVERY URL served HTTP code {}'.format(str(discovery_req.status_code)))
+    # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-7.1.1
+    directory_url = os.environ.get('DIRECTORY')
+    if not directory_url:
+      raise RuntimeError('missing DIRECTORY env')
+    directory_req = urlfetch.fetch(directory_url)
+    logging.debug('{} returned HTTP code {}: {}'.format(directory_url, directory_req.status_code, directory_req.content))
+    if directory_req.status_code != 200:
+      raise RuntimeError('DIRECTORY URL served HTTP code {}'.format(str(directory_req.status_code)))
     try:
-      self.discovery = json.loads(discovery_req.content)
+      self.directory = json.loads(directory_req.content)
     except ValueError as e:
-      raise RuntimeError('DISCOVERY URL served invalid JSON')
+      raise RuntimeError('DIRECTORY URL served invalid JSON')
     for key in ('newNonce', 'newAccount', 'newOrder'):
-      if not key in self.discovery: raise RuntimeError('DISCOVERY JSON missing key {}'.format(key))
+      if not key in self.directory: raise RuntimeError('DIRECTORY JSON missing key {}'.format(key))
 
-    nonce_req = urlfetch.fetch(url=discovery('newNonce'), method=urlfetch.HEAD)
+    # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.4
+    nonce_req = urlfetch.fetch(url=self.directory['newNonce'], method=urlfetch.HEAD)
     self.nonce = nonce_req.headers['replay-nonce']
     logging.debug('Nonce initialised: {}'.format(self.nonce))
 
-    acct_req = request(self, 'newAccount', { 'termsOfServiceAgreed': True })
-    if acct_req.status_code != 302:
+    acct_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
+    if acct_req.status_code >= 400:
       raise RuntimeError('newAccount returned HTTP code {}'.format(str(acct_req.status_code)))
     self.acct = acct_req.headers['location']
     logging.debug('newAccount returned: {}'.format(self.acct))
@@ -59,9 +61,9 @@ class ACME():
   def request(self, key, payload):
     logging.info('ACME request({}, {})'.format(key, payload))
 
-    if not key in self.discovery:
+    if not key in self.directory:
       raise AssertionError
-    fetch(self, self.discovery[key], payload)
+    return self.fetch(self.directory[key], payload)
 
   def fetch(self, url, payload):
     logging.info('ACME fetch({}, {})'.format(url, payload))
@@ -72,7 +74,7 @@ class ACME():
        'nonce': self.nonce,
        'url': url
     }
-    if self.acct:
+    if hasattr(self, 'acct'):
       protected['kid'] = self.acct
     else:
       # https://tools.ietf.org/html/rfc7638#section-3.2
@@ -102,14 +104,14 @@ class ACME():
       url=url,
       payload=payload
     )
-  
+
     self.nonce = result.headers['replay-nonce']
-  
-    logging.debug('ACME fetch({}, {}): {}', url, payload, json.dumps(OrderedDict([
+
+    logging.debug('ACME fetch({}, {}): {}'.format(url, payload, json.dumps(OrderedDict([
       ('code', result.status_code),
       ('headers', dict(result.headers)),
       ('content', result.content)
-    ])))
+    ]))))
   
     return result
 
@@ -180,7 +182,7 @@ class LE(BaseHandler):
         }
       ]
     })
-    if neworder_req.status_code != 200:
+    if neworder_req.status_code != 201:
       raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
     neworder = json.loads(neworder_req.content)
     if not 'authorizations' in neworder:

@@ -8,8 +8,8 @@ manual_scaling:
   instances: 1
 
 env_variables:
-  DISCOVERY: https://acme-staging-v02.api.letsencrypt.org/directory
-  #DISCOVERY: https://acme-v02.api.letsencrypt.org/directory
+  DIRECTORY: https://acme-staging-v02.api.letsencrypt.org/directory
+  #DIRECTORY: https://acme-v02.api.letsencrypt.org/directory
 
   DOMAIN: l.kx.coremem.com
 
