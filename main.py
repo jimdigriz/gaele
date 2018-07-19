@@ -171,5 +171,5 @@ class LE(BaseHandler):
 app = webapp2.WSGIApplication([
   (r'^/_ah/.*$', LE_noop),
   (r'^/cron$', LE_cron),
-  (r'^/.*$', LE),
+  (r'^/\.well-known/acme-challenge/.*$', LE),
 ], debug=True)

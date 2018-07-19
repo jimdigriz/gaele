@@ -14,7 +14,9 @@ env_variables:
   DOMAIN: l.kx.coremem.com
 
 handlers:
-- url: /.*
+- url: /cron
+  script: main.app
+- url: /.well-known/acme-challenge/.*
   script: main.app
 
 libraries:
