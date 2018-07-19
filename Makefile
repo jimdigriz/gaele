@@ -1,10 +1,10 @@
 .PHONY: all
-all: env/.stamp lib/.stamp
-	. env/bin/activate && dev_appserver.py app.yaml --log_level debug
+all: .storage/.stamp | env/.stamp lib/.stamp
+	. env/bin/activate && dev_appserver.py app.yaml --log_level debug --storage_path=.storage
 
 .PHONY: clean
 clean:
-	rm -rf env lib $(wildcard *.pyc)
+	rm -rf env lib .storage $(wildcard *.pyc)
 
 .PHONY: deploy
 deploy: VERSION_ID = $(shell git rev-parse --short HEAD)
@@ -22,4 +22,8 @@ env/.stamp:
 
 lib/.stamp: requirements.txt | env/.stamp
 	. env/bin/activate && pip install -t lib -r requirements.txt
+	@touch $@
+
+.storage/.stamp:
+	mkdir -p $(@D)
 	@touch $@

@@ -8,6 +8,8 @@ This makes for a simple, fire-and-forget and cost effective deployment compared 
 
  * consider moving some of the [environment variables](https://cloud.google.com/appengine/docs/flexible/python/runtime#environment_variables) into [project wide custom metadata](https://cloud.google.com/appengine/docs/flexible/python/runtime#metadata_server)
      * ie. adding a new domain should not require a deploy
+ * only implemented is [RS256](https://tools.ietf.org/html/rfc7518#section-3.3)
+     * [`urn:ietf:params:acme:error:badSignatureAlgorithm`](https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.2) returns `algorithms`
 
 ## Related Links
 

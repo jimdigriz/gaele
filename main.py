@@ -4,8 +4,8 @@ import os
 import httplib2
 import json
 import base64
-import cloudstorage as gcs
 from collections import OrderedDict
+import cloudstorage as gcs
 from google.appengine.api import memcache, app_identity, urlfetch
 #from oauth2client.contrib.appengine import AppAssertionCredentials
 
@@ -21,81 +21,97 @@ bucket = os.environ.get('BUCKET', app_identity.get_default_gcs_bucket_name())
 keysize = int(os.environ.get('KEYSIZE', '2048'))
 domain = os.environ.get('DOMAIN')
 
-def b64u_en (s):
+rsa = None
+signer = None
+
+def b64u_en(s):
   return base64.urlsafe_b64encode(s).rstrip('=')
 
-def discovery (s):
-  if not hasattr(discovery, 'data'):
+acct = None
+class ACME():
+  def __init__(self):
+    logging.info('ACME init')
+
     discovery_url = os.environ.get('DISCOVERY')
     if not discovery_url:
       raise RuntimeError('missing DISCOVERY env')
     discovery_req = urlfetch.fetch(discovery_url)
+    logging.debug('{} returned HTTP code {}: {}'.format(discovery_url, discovery_req.content))
     if discovery_req.status_code != 200:
-      raise RuntimeError('HTTP code {} fetching DISCOVERY URL'.format(str(discovery_req.status_code)))
+      raise RuntimeError('DISCOVERY URL served HTTP code {}'.format(str(discovery_req.status_code)))
     try:
-      discovery.data = json.loads(discovery_req.content)
+      self.discovery = json.loads(discovery_req.content)
     except ValueError as e:
-      raise RuntimeError('Invalid JSON from DISCOVERY URL')
-  return discovery.data[s]
+      raise RuntimeError('DISCOVERY URL served invalid JSON')
+    for key in ('newNonce', 'newAccount', 'newOrder'):
+      if not key in self.discovery: raise RuntimeError('DISCOVERY JSON missing key {}'.format(key))
 
-rsa = None
-signer = None
-nonce = None
-acct = None
-def acme (url, payload):
-  global nonce
-  if not nonce:
     nonce_req = urlfetch.fetch(url=discovery('newNonce'), method=urlfetch.HEAD)
-    nonce = nonce_req.headers['replay-nonce']
+    self.nonce = nonce_req.headers['replay-nonce']
+    logging.debug('Nonce initialised: {}'.format(self.nonce))
 
-  protected = {
-     'alg': 'RS256',
-     'nonce': nonce,
-     'url': url
-  }
-  if acct:
-    protected['kid'] = acct
-  else:
-    protected['jwk'] = {
-       'e': b64u_en(number.long_to_bytes(rsa.e)),
-       'kty': 'RSA',
-       'n': b64u_en(number.long_to_bytes(rsa.n))
+    acct_req = request(self, 'newAccount', { 'termsOfServiceAgreed': True })
+    if acct_req.status_code != 302:
+      raise RuntimeError('newAccount returned HTTP code {}'.format(str(acct_req.status_code)))
+    self.acct = acct_req.headers['location']
+    logging.debug('newAccount returned: {}'.format(self.acct))
+
+  def request(self, key, payload):
+    logging.info('ACME request({}, {})'.format(key, payload))
+
+    if not key in self.discovery:
+      raise AssertionError
+    fetch(self, self.discovery[key], payload)
+
+  def fetch(self, url, payload):
+    logging.info('ACME fetch({}, {})'.format(url, payload))
+
+    # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.2
+    protected = {
+       'alg': 'RS256',
+       'nonce': self.nonce,
+       'url': url
     }
-  protected_b64u = b64u_en(json.dumps(protected))
-
-  payload_b64u = b64u_en(json.dumps(payload))
-
-  hash = SHA256.new(protected_b64u + '.' + payload_b64u)
-  signature_b64u = b64u_en(signer.sign(hash))
-
-  payload = json.dumps({
-     'protected': protected_b64u,
-     'payload': payload_b64u,
-     'signature': signature_b64u
-  })
-
-  result = urlfetch.fetch(
-    method=urlfetch.POST,
-    headers={
-      'content-type': 'application/jose+json'
-    },
-    url=url,
-    payload=payload
-  )
-
-  nonce = result.headers['replay-nonce']
-
-  logging.debug(json.dumps({
-    'url': url,
-    'payload': payload,
-    'result': {
-      'code': result.status_code,
-      'headers': dict(result.headers),
-      'content': result.content
-    }
-  }))
-
-  return result
+    if self.acct:
+      protected['kid'] = self.acct
+    else:
+      # https://tools.ietf.org/html/rfc7638#section-3.2
+      protected['jwk'] = OrderedDict([
+         ('e', b64u_en(number.long_to_bytes(rsa.e))),
+         ('kty', 'RSA'),
+         ('n', b64u_en(number.long_to_bytes(rsa.n)))
+      ])
+    protected_b64u = b64u_en(json.dumps(protected))
+  
+    payload_b64u = b64u_en(json.dumps(payload))
+  
+    hash = SHA256.new(protected_b64u + '.' + payload_b64u)
+    signature_b64u = b64u_en(signer.sign(hash))
+  
+    payload = json.dumps({
+       'protected': protected_b64u,
+       'payload': payload_b64u,
+       'signature': signature_b64u
+    })
+  
+    result = urlfetch.fetch(
+      method=urlfetch.POST,
+      headers={
+        'content-type': 'application/jose+json'
+      },
+      url=url,
+      payload=payload
+    )
+  
+    self.nonce = result.headers['replay-nonce']
+  
+    logging.debug('ACME fetch({}, {}): {}', url, payload, json.dumps(OrderedDict([
+      ('code', result.status_code),
+      ('headers', dict(result.headers)),
+      ('content', result.content)
+    ])))
+  
+    return result
 
 class BaseHandler(webapp2.RequestHandler):
   def get(self):
@@ -118,17 +134,19 @@ class LE_start(BaseHandler):
 
     super(LE_start, self).get()
 
-    rsa_filename = '/' + bucket + '/le.rsa'
+    rsa_filename = '/' + bucket + '/gaele.rsa'
     try:
       rsa_file = gcs.open(rsa_filename)
       rsa = RSA.importKey(rsa_file.read())
       rsa_file.close()
+
       logging.info('RSA loaded')
     except gcs.NotFoundError as e:
       rsa = RSA.generate(keysize)
       rsa_file = gcs.open(rsa_filename, 'w')
       rsa_file.write(rsa.exportKey())
       rsa_file.close()
+
       logging.info('RSA generated')
     signer = PKCS1_v1_5.new(rsa)
 
@@ -153,10 +171,8 @@ class LE(BaseHandler):
   def get(self):
     super(LE, self).get()
    
-    newacct = acme(discovery('newAccount'), { 'termsOfServiceAgreed': True })
-    acct = newacct.headers['location']
-    
-    neworder = acme(discovery('newOrder'), {
+    acme = ACME()
+    neworder_req = acme.request('newOrder', {
       'identifiers': [
         {
           'type': 'dns',
@@ -164,9 +180,13 @@ class LE(BaseHandler):
         }
       ]
     })
-    neworder_content = json.loads(neworder.content)
+    if neworder_req.status_code != 200:
+      raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
+    neworder = json.loads(neworder_req.content)
+    if not 'authorizations' in neworder:
+      raise RuntimeError('newOrder returned no authorizations')
     
-    authz = acme(neworder_content['authorizations'][0], {
+    authz_req = acme.fetch(neworder['authorizations'][0], {
       'identifier': {
         'type': 'dns',
         'value': domain
