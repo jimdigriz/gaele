@@ -11,10 +11,10 @@ skip_files:
 - ^(.*/)?.*\.py[co]$
 - ^(.*/)?.*/RCS/.*$
 - ^(.*/)?\..*$
-- ^/Makefile$
-- ^/README\.md$
-- ^/env$
-- ^/lib$
+- Makefile
+- README\.md
+- env/
+- lib/
 
 handlers:
 - url: /_ah/.*
