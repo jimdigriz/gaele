@@ -56,6 +56,7 @@ class ACME():
     if acct_req.status_code >= 400:
       raise RuntimeError('newAccount returned HTTP code {}'.format(str(acct_req.status_code)))
     self.acct = acct_req.headers['location']
+
     logging.debug('newAccount returned: {}'.format(self.acct))
 
   def request(self, key, payload):
@@ -63,6 +64,7 @@ class ACME():
 
     if not key in self.directory:
       raise AssertionError
+
     return self.fetch(self.directory[key], payload)
 
   def fetch(self, url, payload):
