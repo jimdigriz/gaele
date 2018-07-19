@@ -20,8 +20,12 @@ class Configuration(ndb.Model):
   keysize = ndb.IntegerProperty(default=2048, choices=[2048])
   key = ndb.BlobProperty()
   alg = ndb.TextProperty(default='RS256', choices=['RS256'])
-  account = ndb.TextProperty(),
+  account = ndb.TextProperty()
   domains = ndb.TextProperty(repeated=True)
+
+alg2keytype = {
+  'RS256': 'RSA'
+}
 
 configuration_key = ndb.Key('Configuration', 'configuration')
 
@@ -29,16 +33,12 @@ def b64u_en(s):
   return base64.urlsafe_b64encode(s).rstrip('=')
 
 class ACME():
-  directory = None
-  nonce = None
-  key = None
-  signer = None
-
   def __init__(self, configuration):
     logging.info('ACME init')
 
-    key = RSA.importKey(configuration.key)
-    signer = PKCS1_v1_5.new(key)
+    self.alg = configuration.alg
+    self.key = RSA.importKey(configuration.key)
+    self.signer = PKCS1_v1_5.new(self.key)
 
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-7.1.1
     directory_req = urlfetch.fetch(configuration.directory)
@@ -46,59 +46,60 @@ class ACME():
     if directory_req.status_code != 200:
       raise RuntimeError('DIRECTORY URL served HTTP code {}'.format(str(directory_req.status_code)))
     try:
-      directory = json.loads(directory_req.content)
+      self.directory = json.loads(directory_req.content)
     except ValueError as e:
       raise RuntimeError('DIRECTORY URL served invalid JSON')
     for key in ('newNonce', 'newAccount', 'newOrder'):
-      if not key in directory:
+      if not key in self.directory:
         raise RuntimeError('DIRECTORY JSON missing key {}'.format(key))
 
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.4
-    nonce_req = urlfetch.fetch(url=directory['newNonce'], method=urlfetch.HEAD)
-    nonce = nonce_req.headers['replay-nonce']
-    logging.debug('Nonce initialised: {}'.format(nonce))
+    nonce_req = urlfetch.fetch(url=self.directory['newNonce'], method=urlfetch.HEAD)
+    self.nonce = nonce_req.headers['replay-nonce']
+    logging.debug('Nonce initialised: {}'.format(self.nonce))
 
     if not configuration.account:
-      acct_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
-      if acct_req.status_code >= 400:
-        raise RuntimeError('newAccount returned HTTP code {}'.format(str(acct_req.status_code)))
-      configuration.account = acct_req.headers['location']
+      account_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
+      if account_req.status_code >= 400:
+        raise RuntimeError('newAccount returned HTTP code {}'.format(str(account_req.status_code)))
+      configuration.account = account_req.headers['location']
       configuration.put()
+    self.account = configuration.account
 
-    logging.debug('ACME account: {}'.format(configuration.account))
+    logging.debug('ACME account: {}'.format(self.account))
 
   def request(self, key, payload):
     logging.info('ACME request({}, {})'.format(key, payload))
 
-    if not key in directory:
+    if not key in self.directory:
       raise AssertionError
 
-    return self.fetch(directory[key], payload)
+    return self.fetch(self.directory[key], payload)
 
   def fetch(self, url, payload):
     logging.info('ACME fetch({}, {})'.format(url, payload))
 
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.2
     protected = {
-       'alg': 'RS256',
-       'nonce': nonce,
+       'alg': self.alg,
+       'nonce': self.nonce,
        'url': url
     }
-    if acct:
-      protected['kid'] = acct
+    if hasattr(self, 'acct'):
+      protected['kid'] = self.account
     else:
       # https://tools.ietf.org/html/rfc7638#section-3.2
       protected['jwk'] = OrderedDict([
-         ('e', b64u_en(number.long_to_bytes(rsa.e))),
-         ('kty', 'RSA'),
-         ('n', b64u_en(number.long_to_bytes(rsa.n)))
+         ('e', b64u_en(number.long_to_bytes(self.key.e))),
+         ('kty', alg2keytype[self.alg]),
+         ('n', b64u_en(number.long_to_bytes(self.key.n)))
       ])
     protected_b64u = b64u_en(json.dumps(protected))
 
     payload_b64u = b64u_en(json.dumps(payload))
 
     hash = SHA256.new(protected_b64u + '.' + payload_b64u)
-    signature_b64u = b64u_en(signer.sign(hash))
+    signature_b64u = b64u_en(self.signer.sign(hash))
 
     payload = json.dumps({
        'protected': protected_b64u,
@@ -115,7 +116,7 @@ class ACME():
       payload=payload
     )
 
-    nonce = result.headers['replay-nonce']
+    self.nonce = result.headers['replay-nonce']
 
     logging.debug('ACME fetch({}, {}): {}'.format(url, payload, json.dumps(OrderedDict([
       ('code', result.status_code),
@@ -180,16 +181,14 @@ class LE(BaseHandler):
   def get(self):
     super(LE, self).get()
 
-    configuration = configuration.get()
+    configuration = configuration_key.get()
 
     acme = ACME(configuration)
     neworder_req = acme.request('newOrder', {
-      'identifiers': [
-        {
-          'type': 'dns',
-          'value': domain
-        }
-      ]
+      'identifiers': {
+        'type': 'dns',
+        'value': domain
+      } for domain in configuration.domains
     })
     if neworder_req.status_code != 201:
       raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
@@ -197,12 +196,12 @@ class LE(BaseHandler):
     if not 'authorizations' in neworder:
       raise RuntimeError('newOrder returned no authorizations')
 
-    authz_req = acme.fetch(neworder['authorizations'][0], {
-      'identifier': {
-        'type': 'dns',
-        'value': domain
-      }
-    })
+#    authz_req = acme.fetch(neworder['authorizations'][0], {
+#      'identifier': {
+#        'type': 'dns',
+#        'value': domain
+#      }
+#    })
 
     self.response.write('le')
 
