@@ -13,8 +13,8 @@ skip_files:
 - ^(.*/)?\..*$
 - ^/Makefile$
 - ^/README\.md$
-- ^/env$
-- ^/lib$
+- ^/env(/.*)?$
+- ^/lib(/.*)?$
 
 handlers:
 - url: /_ah/.*
