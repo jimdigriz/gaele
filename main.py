@@ -13,7 +13,10 @@ from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
 from Crypto.Util import number
 
-alg2keytype = {
+DIRECTORY_STAGING = 'https://acme-staging-v02.api.letsencrypt.org/directory'
+DIRECTORY = 'https://acme-v02.api.letsencrypt.org/directory'
+
+ALG2KEYTYPE = {
   'RS256': 'RSA'
 }
 
@@ -23,7 +26,7 @@ def b64u_en(s):
 class Configuration(ndb.Model):
   created = ndb.DateTimeProperty(auto_now_add=True)
   modified = ndb.DateTimeProperty(auto_now=True)
-  directory = ndb.TextProperty(default='https://acme-staging-v02.api.letsencrypt.org/directory', choices=['https://acme-staging-v02.api.letsencrypt.org/directory','https://acme-v02.api.letsencrypt.org/directory'])
+  directory = ndb.TextProperty(default=DIRECTORY_STAGING, choices=[DIRECTORY_STAGING, DIRECTORY])
   keysize = ndb.IntegerProperty(default=2048, choices=[2048])
   key = ndb.BlobProperty()
   alg = ndb.TextProperty(default='RS256', choices=['RS256'])
@@ -90,7 +93,7 @@ class ACME():
       # https://tools.ietf.org/html/rfc7638#section-3.2
       protected['jwk'] = OrderedDict([
          ('e', b64u_en(number.long_to_bytes(self.key.e))),
-         ('kty', alg2keytype[self.alg]),
+         ('kty', ALG2KEYTYPE[self.alg]),
          ('n', b64u_en(number.long_to_bytes(self.key.n)))
       ])
     protected_b64u = b64u_en(json.dumps(protected))
