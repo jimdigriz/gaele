@@ -24,23 +24,6 @@ domain = os.environ.get('DOMAIN')
 def b64u_en (s):
   return base64.urlsafe_b64encode(s).rstrip('=')
 
-def pubkey (s):
-  if not hasattr(pubkey, 'key'):
-    rsa_filename = '/' + bucket + '/le.rsa'
-    try:
-      rsa_file = gcs.open(rsa_filename)
-      pubkey.key = RSA.importKey(rsa_file.read())
-      rsa_file.close()
-    except gcs.NotFoundError as e:
-      pubkey.key = RSA.generate(keysize)
-      rsa_file = gcs.open(rsa_filename, 'w')
-      rsa_file.write(key.exportKey())
-      rsa_file.close()
-    pubkey.e = pubkey.key.e
-    pubkey.n = pubkey.key.n
-    pubkey.signer = PKCS1_v1_5.new(pubkey.key)
-  return getattr(pubkey, s)
-
 def discovery (s):
   if not hasattr(discovery, 'data'):
     discovery_url = os.environ.get('DISCOVERY')
@@ -55,6 +38,8 @@ def discovery (s):
       raise RuntimeError('Invalid JSON from DISCOVERY URL')
   return discovery.data[s]
 
+rsa = None
+signer = None
 nonce = None
 acct = None
 def acme (url, payload):
@@ -72,16 +57,16 @@ def acme (url, payload):
     protected['kid'] = acct
   else:
     protected['jwk'] = {
-       'e': b64u_en(number.long_to_bytes(pubkey('e'))),
+       'e': b64u_en(number.long_to_bytes(rsa.e)),
        'kty': 'RSA',
-       'n': b64u_en(number.long_to_bytes(pubkey('n')))
+       'n': b64u_en(number.long_to_bytes(rsa.n))
     }
   protected_b64u = b64u_en(json.dumps(protected))
 
   payload_b64u = b64u_en(json.dumps(payload))
 
   hash = SHA256.new(protected_b64u + '.' + payload_b64u)
-  signature_b64u = b64u_en(pubkey('signer').sign(hash))
+  signature_b64u = b64u_en(signer.sign(hash))
 
   payload = json.dumps({
      'protected': protected_b64u,
@@ -127,6 +112,28 @@ class BaseHandler(webapp2.RequestHandler):
     else:
         self.response.set_status(500)
 
+class LE_start(BaseHandler):
+  def get(self):
+    global rsa, signer
+
+    super(LE_start, self).get()
+
+    rsa_filename = '/' + bucket + '/le.rsa'
+    try:
+      rsa_file = gcs.open(rsa_filename)
+      rsa = RSA.importKey(rsa_file.read())
+      rsa_file.close()
+      logging.info('RSA loaded')
+    except gcs.NotFoundError as e:
+      rsa = RSA.generate(keysize)
+      rsa_file = gcs.open(rsa_filename, 'w')
+      rsa_file.write(rsa.exportKey())
+      rsa_file.close()
+      logging.info('RSA generated')
+    signer = PKCS1_v1_5.new(rsa)
+
+    self.response.set_status(204)
+
 class LE_noop(BaseHandler):
   def get(self):
     super(LE_noop, self).get()
@@ -169,6 +176,7 @@ class LE(BaseHandler):
     self.response.write('le')
 
 app = webapp2.WSGIApplication([
+  (r'^/_ah/start$', LE_start),
   (r'^/_ah/.*$', LE_noop),
   (r'^/cron$', LE_cron),
   (r'^/\.well-known/acme-challenge/.*$', LE),
