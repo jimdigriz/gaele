@@ -6,7 +6,7 @@ all: .storage/.stamp | env/.stamp lib/.stamp
 
 .PHONY: clean
 clean:
-	rm -rf env lib .storage $(wildcard *.pyc)
+	rm -rf env lib .storage .deploy $(wildcard *.pyc)
 
 .PHONY: deploy
 deploy: VERSION_ID = $(shell git rev-parse --short HEAD)$(shell git diff-files --quiet || echo -dirty)
@@ -17,18 +17,23 @@ endif
 ifeq ($(IKNOWWHATIAMDOING),)
 	@git diff-files --quiet || { echo no dirty deploys >&2; git status; exit 1; }
 endif
-	gcloud --project=$(PROJECT_ID) app deploy app.yaml \
-		--version $(VERSION_ID) \
-		--promote \
-		--stop-previous-version
+	rm -rf .$@
+	mkdir .$@
+	cp app.yaml cron.yaml main.py .$@
+	pip install -t .$@/lib -r requirements.txt
+	cd .$@ && gcloud --project=$(PROJECT_ID) app deploy app.yaml \
+				--version $(VERSION_ID) \
+				--promote \
+				--stop-previous-version
+	rm -rf .$@
 
 env/.stamp:
 	@rm -rf env
-	virtualenv env 
+	virtualenv env
 	@touch $@
 
-lib/.stamp: requirements.txt | env/.stamp
-	. env/bin/activate && pip install -t lib -r requirements.txt
+lib/.stamp: requirements.txt requirements-dev.txt | env/.stamp
+	. env/bin/activate && pip install -t lib -r requirements.txt -r requirements-dev.txt
 	@touch $@
 
 .storage/.stamp:

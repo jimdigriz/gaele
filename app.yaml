@@ -14,5 +14,7 @@ handlers:
   script: main.app
 
 libraries:
+- name: webapp2
+  version: 2.5.2
 - name: pycrypto
-  version: latest
+  version: 2.6.1

@@ -1,13 +1,12 @@
 import webapp2
 import logging
 import os
-import httplib2
 import json
 import base64
 from datetime import datetime, timedelta
 from collections import OrderedDict
 from google.appengine.ext import ndb
-from google.appengine.api import app_identity, urlfetch
+from google.appengine.api import urlfetch
 
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
