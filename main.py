@@ -4,6 +4,7 @@ import os
 import httplib2
 import json
 import base64
+from datetime import datetime, timedelta
 from collections import OrderedDict
 from google.appengine.ext import ndb
 from google.appengine.api import app_identity, urlfetch
@@ -28,6 +29,7 @@ class Configuration(ndb.Model):
   modified = ndb.DateTimeProperty(auto_now=True)
   directory = ndb.TextProperty(default=DIRECTORY_STAGING, choices=[DIRECTORY_STAGING, DIRECTORY])
   keysize = ndb.IntegerProperty(default=2048, choices=[2048])
+  period = ndb.IntegerProperty(default=0)
   key = ndb.BlobProperty()
   alg = ndb.TextProperty(default='RS256', choices=['RS256'])
   account = ndb.TextProperty()
@@ -186,12 +188,20 @@ class GAELE_ChallengeHandler(GAELE_BaseHandler):
     configuration = configuration_key.get()
 
     acme = ACME(configuration)
-    neworder_req = acme.request('newOrder', {
-      'identifiers': [{
-        'type': 'dns',
-        'value': domain
-      } for domain in configuration.domains]
-    })
+    neworder_payload = {
+      'identifiers': [
+        {
+          'type': 'dns',
+          'value': domain
+        } for domain in configuration.domains
+      ]
+    }
+    if configuration.period > 0:
+      now = datetime.utcnow()
+      now = now - timedelta(microseconds=now.microsecond)
+      neworder_payload['notBefore'] = (now - timedelta(seconds=10)).isoformat() + 'Z'
+      neworder_payload['notAfter'] = (now + timedelta(seconds=configuration.period)).isoformat() + 'Z'
+    neworder_req = acme.request('newOrder', neworder_payload)
     if neworder_req.status_code != 201:
       raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
     neworder = json.loads(neworder_req.content)
