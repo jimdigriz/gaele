@@ -1,26 +1,26 @@
 DOMAINS = example.com
 
 .PHONY: all
-all: ENV_DOMAINS = --env_var DOMAINS="$(DOMAINS)"
 all: .storage/.stamp | env/.stamp lib/.stamp
-	. env/bin/activate \
-		&& dev_appserver.py app.yaml \
-			--log_level debug \
-			--storage_path=.storage \
-			$(ENV_DOMAINS)
+	. env/bin/activate && dev_appserver.py app.yaml --log_level debug --storage_path=.storage 
 
 .PHONY: clean
 clean:
 	rm -rf env lib .storage $(wildcard *.pyc)
 
 .PHONY: deploy
-deploy: VERSION_ID = $(shell git rev-parse --short HEAD)
+deploy: VERSION_ID = $(shell git rev-parse --short HEAD)$(shell git diff-files --quiet || echo -dirty)
 deploy:
 ifeq ($(PROJECT_ID),)
 	@echo please provide PROJECT_ID >&2; exit 1
 endif
+ifeq ($(IKNOWWHATIAMDOING),)
 	@git diff-files --quiet || { echo no dirty deploys >&2; git status; exit 1; }
-	gcloud --project=$(PROJECT_ID) app deploy --version $(VERSION_ID)
+endif
+	gcloud --project=$(PROJECT_ID) app deploy app.yaml \
+		--version $(VERSION_ID) \
+		--promote \
+		--stop-previous-version
 
 env/.stamp:
 	@rm -rf env

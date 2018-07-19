@@ -40,11 +40,11 @@ Configuration of the project is maintained through a [Google Datastore](https://
 
 The 'configuration' key in the Datastore contains the following:
 
- * **`directory` (default is [LE staging](https://letsencrypt.org/docs/staging-environment/)):** URL pointing to the configuration directory
-     * **staging [default]:** `https://acme-staging-v02.api.letsencrypt.org/directory`
+ * **`directory` (default: staging):** URL pointing to the configuration directory:
+     * **[staging](https://letsencrypt.org/docs/staging-environment/) [default]:** `https://acme-staging-v02.api.letsencrypt.org/directory`
      * **production:** `https://acme-v02.api.letsencrypt.org/directory`
- * **`domains`:** text list of domains to run the service for
-     * this is safe to edit throughout the lifecycle of the deployment without impact
+ * **`domains` (default: `example.com`):** space seperated list of domains to run the service for
+     * safe to edit throughout the lifecycle of the deployment without impact
 
 After the deploy you should set `domains` to the list of domains you want to service and set `directory` to the production server URL.
 
@@ -52,20 +52,20 @@ After the deploy you should set `domains` to the list of domains you want to ser
 
 Other properties are:
 
- * **`alg` (default: 'RS256'):** algorithm to use ([DO NOT EDIT](https://gitlab.com/coremem/gaele/issues/2))
+ * **`account`:** text of the URL to the account for this service
+     * typically this is not edited but needs to be blanked when amending `directory` if already set
+ * **`alg` (default: 'RS256' [[only supported](https://gitlab.com/coremem/gaele/issues/2)]):** algorithm to use
  * **`keysize` (default: 2048):** key length of public key to generate
  * **`period` (default: 0):** validatity time in seconds to request for the certificate for
      * **N.B.** Let's Encrypt does not support [`notBefore` or `notAfter`](https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-7.1.3) so this should be left set to `0`
- * **`account`:** text of the URL to the account for this service
-     * typically this is not edited but needs to be blanked when amending `directory` if already set
 
 #### Informational
 
 These must not be edited and should be treated read-only:
 
- * **`created`:** datetime when the configuration was created (DO NOT EDIT)
- * **`modified`:** datetime when the configuration was last modified (DO NOT EDIT)
- * **`key`:** blob of key (DO NOT EDIT)
+ * **`created`:** datetime when the configuration was created
+ * **`modified`:** datetime when the configuration was last modified
+ * **`key`:** blob of key
 
 ## HTTP Server on GCE
 

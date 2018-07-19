@@ -25,6 +25,7 @@ def b64u_en(s):
   return base64.urlsafe_b64encode(s).rstrip('=')
 
 class Configuration(ndb.Model):
+  _default_indexed = False
   created = ndb.DateTimeProperty(auto_now_add=True)
   modified = ndb.DateTimeProperty(auto_now=True)
   directory = ndb.TextProperty(default=DIRECTORY_STAGING)
@@ -33,7 +34,7 @@ class Configuration(ndb.Model):
   key = ndb.BlobProperty()
   alg = ndb.TextProperty(default='RS256', choices=['RS256'])
   account = ndb.TextProperty()
-  domains = ndb.TextProperty(repeated=True)
+  domains = ndb.TextProperty(default='example.com')
 configuration_key = ndb.Key('Configuration', 'configuration')
 
 class ACME():
@@ -152,8 +153,7 @@ class GAELE_StartHandler(GAELE_BaseHandler):
     configuration = configuration_key.get()
     if not configuration:
       logging.info('configuration init')
-      domains = os.environ.get('DOMAINS', '').split()
-      configuration = Configuration(id=configuration_key.id(), domains=domains)
+      configuration = Configuration(id=configuration_key.id())
       configuration.put()
 
     if not configuration.key:
@@ -181,7 +181,7 @@ class GAELE_CronHandler(GAELE_BaseHandler):
 
     configuration = configuration_key.get()
 
-    if len(configuration.domains) == 0:
+    if configuration.domains.split() == 0:
       raise RuntimeError('domains list is empty')
 
     if not 'x-appengine-cron' in self.request.headers:
@@ -195,7 +195,7 @@ class GAELE_ChallengeHandler(GAELE_BaseHandler):
 
     configuration = configuration_key.get()
 
-    if len(configuration.domains) == 0:
+    if configuration.domains.split() == 0:
       raise RuntimeError('domains list is empty')
 
     logging.info('domains: {}'.format(configuration.domains))
@@ -206,7 +206,7 @@ class GAELE_ChallengeHandler(GAELE_BaseHandler):
         {
           'type': 'dns',
           'value': domain
-        } for domain in configuration.domains
+        } for domain in configuration.domains.split()
       ]
     }
     if configuration.period > 0:

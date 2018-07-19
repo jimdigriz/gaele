@@ -1,11 +1,19 @@
-service: gaele
-
 runtime: python27
 api_version: 1
 threadsafe: true
 
 manual_scaling:
   instances: 1
+
+skip_files:
+- ^(.*/)?#.*#$
+- ^(.*/)?.*~$
+- ^(.*/)?.*\.py[co]$
+- ^(.*/)?.*/RCS/.*$
+- ^(.*/)?\..*$
+- ^Makefile$
+- ^/env$
+- ^/lib$
 
 handlers:
 - url: /_ah/.*
