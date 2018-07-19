@@ -127,6 +127,21 @@ class BaseHandler(webapp2.RequestHandler):
     else:
         self.response.set_status(500)
 
+class LE_noop(BaseHandler):
+  def get(self):
+    super(LE_noop, self).get()
+    self.response.set_status(204)
+
+class LE_cron(BaseHandler):
+  def get(self):
+    super(LE_cron, self).get()
+
+    if not 'x-appengine-cron' in self.request.headers:
+      self.response.set_status(403)
+      return
+
+    self.response.write('le cron')
+
 class LE(BaseHandler):
   def get(self):
     super(LE, self).get()
@@ -153,17 +168,8 @@ class LE(BaseHandler):
 
     self.response.write('le')
 
-class LE_cron(BaseHandler):
-  def get(self):
-    super(LE_cron, self).get()
-
-    if not 'x-appengine-cron' in self.request.headers:
-      self.response.set_status(403)
-      return
-
-    self.response.write('le cron')
-
 app = webapp2.WSGIApplication([
+  (r'^/_ah/.*$', LE_noop),
   (r'^/cron$', LE_cron),
   (r'^/.*$', LE),
 ], debug=True)
