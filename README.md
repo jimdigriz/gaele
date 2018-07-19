@@ -57,7 +57,7 @@ For this need to set up the [Local Development Server](https://cloud.google.com/
 
     make
 
-You can open the [Admin Server UI by going to http://localhost:8000](http://localhost:8000) in your browser.
+You can open the [Admin Server UI by going to `http://localhost:8000`](http://localhost:8000) in your browser.
 
 ## Cron
 
