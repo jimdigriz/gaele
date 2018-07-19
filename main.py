@@ -35,7 +35,7 @@ class Configuration(ndb.Model):
   alg = ndb.TextProperty(default='RS256', choices=['RS256'])
   account = ndb.TextProperty()
   domains = ndb.TextProperty(default='example.com')
-configuration_key = ndb.Key('Configuration', 'configuration')
+configuration_key = ndb.Key('Configuration', 'gaele.configuration')
 
 class ACME():
   def __init__(self, configuration):

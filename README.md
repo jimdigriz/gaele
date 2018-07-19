@@ -34,11 +34,13 @@ You will also require `make` to be installed.
 
     make deploy PROJECT_ID=project-123456
 
+**N.B.** it is recommended you use a dedicated project unless your existing project does not use or plan to use either GAE or Datastore
+
 ## Configuration
 
-Configuration of the project is maintained through a [Google Datastore](https://cloud.google.com/appengine/docs/standard/python/datastore/) object with the key `configuration`.
+Configuration of the project is maintained through a [Google Datastore](https://cloud.google.com/appengine/docs/standard/python/datastore/) object with the key `gaele.configuration`.
 
-The 'configuration' key in the Datastore contains the following:
+The 'gaele.configuration' key in the Datastore contains the following:
 
  * **`directory` (default: staging):** URL pointing to the configuration directory:
      * **[staging](https://letsencrypt.org/docs/staging-environment/) [default]:** `https://acme-staging-v02.api.letsencrypt.org/directory`
