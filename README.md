@@ -56,3 +56,9 @@ Once you have deployed to GAE, you need to configure your HTTP servers to proxy 
 For this need to set up the [Local Development Server](https://cloud.google.com/appengine/docs/standard/python/tools/using-local-server).  Once installed you should be able to just run from within the project:
 
     make
+
+You can open the Admin Server UI by going to http://localhost:8000 in your browser.
+
+## Cron
+
+To excercise the cron task can use the 'Run now' button in the 'Cron Jobs' section of the Admin Server UI.

@@ -1,5 +1,6 @@
 cron:
 - url: /cron
+  target: gaele
   schedule: every 24 hours
   retry_parameters:
     min_backoff_seconds: 300
