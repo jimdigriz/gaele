@@ -5,67 +5,75 @@ import httplib2
 import json
 import base64
 from collections import OrderedDict
-import cloudstorage as gcs
-from google.appengine.api import memcache, app_identity, urlfetch
-#from oauth2client.contrib.appengine import AppAssertionCredentials
+from google.appengine.ext import ndb
+from google.appengine.api import app_identity, urlfetch
 
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
 from Crypto.Util import number
 
-#credentials = AppAssertionCredentials(scope='https://www.googleapis.com/auth/cloud-platform')
-#http = credentials.authorize(httplib2.Http(memcache))
+class Configuration(ndb.Model):
+  created = ndb.DateTimeProperty(auto_now_add=True)
+  modified = ndb.DateTimeProperty(auto_now=True)
+  directory = ndb.TextProperty(default='https://acme-staging-v02.api.letsencrypt.org/directory', choices=['https://acme-staging-v02.api.letsencrypt.org/directory','https://acme-v02.api.letsencrypt.org/directory'])
+  keysize = ndb.IntegerProperty(default=2048, choices=[2048])
+  key = ndb.BlobProperty()
+  alg = ndb.TextProperty(default='RS256', choices=['RS256'])
+  account = ndb.TextProperty(),
+  domains = ndb.TextProperty(repeated=True)
 
-bucket = os.environ.get('BUCKET', app_identity.get_default_gcs_bucket_name())
-keysize = int(os.environ.get('KEYSIZE', '2048'))
-domain = os.environ.get('DOMAIN')
-
-rsa = None
-signer = None
+configuration_key = ndb.Key('Configuration', 'configuration')
 
 def b64u_en(s):
   return base64.urlsafe_b64encode(s).rstrip('=')
 
-acct = None
 class ACME():
-  def __init__(self):
+  directory = None
+  nonce = None
+  key = None
+  signer = None
+
+  def __init__(self, configuration):
     logging.info('ACME init')
 
+    key = RSA.importKey(configuration.key)
+    signer = PKCS1_v1_5.new(key)
+
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-7.1.1
-    directory_url = os.environ.get('DIRECTORY')
-    if not directory_url:
-      raise RuntimeError('missing DIRECTORY env')
-    directory_req = urlfetch.fetch(directory_url)
-    logging.debug('{} returned HTTP code {}: {}'.format(directory_url, directory_req.status_code, directory_req.content))
+    directory_req = urlfetch.fetch(configuration.directory)
+    logging.debug('{} returned HTTP code {}: {}'.format(configuration.directory, directory_req.status_code, directory_req.content))
     if directory_req.status_code != 200:
       raise RuntimeError('DIRECTORY URL served HTTP code {}'.format(str(directory_req.status_code)))
     try:
-      self.directory = json.loads(directory_req.content)
+      directory = json.loads(directory_req.content)
     except ValueError as e:
       raise RuntimeError('DIRECTORY URL served invalid JSON')
     for key in ('newNonce', 'newAccount', 'newOrder'):
-      if not key in self.directory: raise RuntimeError('DIRECTORY JSON missing key {}'.format(key))
+      if not key in directory:
+        raise RuntimeError('DIRECTORY JSON missing key {}'.format(key))
 
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.4
-    nonce_req = urlfetch.fetch(url=self.directory['newNonce'], method=urlfetch.HEAD)
-    self.nonce = nonce_req.headers['replay-nonce']
-    logging.debug('Nonce initialised: {}'.format(self.nonce))
+    nonce_req = urlfetch.fetch(url=directory['newNonce'], method=urlfetch.HEAD)
+    nonce = nonce_req.headers['replay-nonce']
+    logging.debug('Nonce initialised: {}'.format(nonce))
 
-    acct_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
-    if acct_req.status_code >= 400:
-      raise RuntimeError('newAccount returned HTTP code {}'.format(str(acct_req.status_code)))
-    self.acct = acct_req.headers['location']
+    if not configuration.account:
+      acct_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
+      if acct_req.status_code >= 400:
+        raise RuntimeError('newAccount returned HTTP code {}'.format(str(acct_req.status_code)))
+      configuration.account = acct_req.headers['location']
+      configuration.put()
 
-    logging.debug('newAccount returned: {}'.format(self.acct))
+    logging.debug('ACME account: {}'.format(configuration.account))
 
   def request(self, key, payload):
     logging.info('ACME request({}, {})'.format(key, payload))
 
-    if not key in self.directory:
+    if not key in directory:
       raise AssertionError
 
-    return self.fetch(self.directory[key], payload)
+    return self.fetch(directory[key], payload)
 
   def fetch(self, url, payload):
     logging.info('ACME fetch({}, {})'.format(url, payload))
@@ -73,11 +81,11 @@ class ACME():
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.2
     protected = {
        'alg': 'RS256',
-       'nonce': self.nonce,
+       'nonce': nonce,
        'url': url
     }
-    if hasattr(self, 'acct'):
-      protected['kid'] = self.acct
+    if acct:
+      protected['kid'] = acct
     else:
       # https://tools.ietf.org/html/rfc7638#section-3.2
       protected['jwk'] = OrderedDict([
@@ -107,7 +115,7 @@ class ACME():
       payload=payload
     )
 
-    self.nonce = result.headers['replay-nonce']
+    nonce = result.headers['replay-nonce']
 
     logging.debug('ACME fetch({}, {}): {}'.format(url, payload, json.dumps(OrderedDict([
       ('code', result.status_code),
@@ -134,26 +142,21 @@ class BaseHandler(webapp2.RequestHandler):
 
 class LE_start(BaseHandler):
   def get(self):
-    global rsa, signer
-
     super(LE_start, self).get()
 
-    rsa_filename = '/' + bucket + '/gaele.rsa'
-    try:
-      rsa_file = gcs.open(rsa_filename)
-      rsa = RSA.importKey(rsa_file.read())
-      rsa_file.close()
+    configuration = configuration_key.get()
+    if not configuration:
+      logging.info('Configuration init')
+      configuration = Configuration(id=configuration_key.id(), domains=['example.com'])
+      configuration.put()
 
-      logging.info('RSA loaded')
-    except gcs.NotFoundError as e:
-      rsa = RSA.generate(keysize)
-      rsa_file = gcs.open(rsa_filename, 'w')
-      rsa_file.write(rsa.exportKey())
-      rsa_file.close()
+    if not configuration.key:
+      if configuration.alg != 'RS256':
+        raise RuntimeError('unsupported alg: {}'.format(configuration.alg))
 
-      logging.info('RSA generated')
-
-    signer = PKCS1_v1_5.new(rsa)
+      key = RSA.generate(configuration.keysize)
+      configuration.key = key.exportKey()
+      configuration.put()
 
     self.response.set_status(204)
 
@@ -177,7 +180,9 @@ class LE(BaseHandler):
   def get(self):
     super(LE, self).get()
 
-    acme = ACME()
+    configuration = configuration.get()
+
+    acme = ACME(configuration)
     neworder_req = acme.request('newOrder', {
       'identifiers': [
         {
