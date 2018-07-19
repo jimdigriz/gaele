@@ -4,6 +4,8 @@
 
 This makes for a simple, fire-and-forget and cost effective solution when compared to other existing documented approaches described by the community.
 
+`GAELE` (Google App Engine - Let's Encrypt) is a version two client.
+
 ## Related Links
 
  * [Let's Encrypt (LE)](https://letsencrypt.org/)
@@ -31,6 +33,23 @@ You will also require `make` to be installed.
 # Deploy
 
     make deploy PROJECT_ID=project-123456
+
+There is a [Google Datastore](https://cloud.google.com/appengine/docs/standard/python/datastore/) objected with the key 'configuration' which contains the following:
+
+ * **`created`:** datetime when the configuration was created (read-only/informational)
+ * **`modified`:** datetime when the configuration was last modified (read-only/informational)
+ * **`directory` (default is [LE staging](https://letsencrypt.org/docs/staging-environment/)):** URL pointing to the configuration directory
+     * **staging [default]:** `https://acme-staging-v02.api.letsencrypt.org/directory`
+     * **production:** `https://acme-v02.api.letsencrypt.org/directory`
+ * **`alg` (default: 'RS256' [no support for others](https://gitlab.com/coremem/gaele/issues/2)):** algorithm use
+ * **`keysize` (default: 2048):** key length of public key to generate
+ * **`period` (default: 0):** validatity time in seconds to request for the certificate for
+     * **N.B.** Let's Encrypt does not support [`notBefore` or `notAfter`](https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-7.1.3) so this should be left set to `0`
+ * **`key`:** blob of key (read-only)
+ * **`account`:** text of the URL to the account for this service (read-only/informational)
+ * **`domains`:** text list of domains to run the service for
+
+After the deploy you should change `domains` and set `directory` to the production server URL.
 
 ## HTTP Server on GCE
 
