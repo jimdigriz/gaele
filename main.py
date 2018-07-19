@@ -27,7 +27,7 @@ def b64u_en(s):
 class Configuration(ndb.Model):
   created = ndb.DateTimeProperty(auto_now_add=True)
   modified = ndb.DateTimeProperty(auto_now=True)
-  directory = ndb.TextProperty(default=DIRECTORY_STAGING, choices=[DIRECTORY_STAGING, DIRECTORY])
+  directory = ndb.TextProperty(default=DIRECTORY_STAGING)
   keysize = ndb.IntegerProperty(default=2048, choices=[2048])
   period = ndb.IntegerProperty(default=0)
   key = ndb.BlobProperty()
@@ -40,13 +40,14 @@ class ACME():
   def __init__(self, configuration):
     logging.info('ACME init')
 
+    self.account = configuration.account
     self.alg = configuration.alg
     self.key = RSA.importKey(configuration.key)
     self.signer = PKCS1_v1_5.new(self.key)
 
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-7.1.1
     directory_req = urlfetch.fetch(configuration.directory)
-    logging.debug('{} returned HTTP code {}: {}'.format(configuration.directory, directory_req.status_code, directory_req.content))
+    logging.debug('ACME {} returned HTTP code {}: {}'.format(configuration.directory, directory_req.status_code, directory_req.content))
     if directory_req.status_code != 200:
       raise RuntimeError('DIRECTORY URL served HTTP code {}'.format(str(directory_req.status_code)))
     try:
@@ -60,17 +61,7 @@ class ACME():
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.4
     nonce_req = urlfetch.fetch(url=self.directory['newNonce'], method=urlfetch.HEAD)
     self.nonce = nonce_req.headers['replay-nonce']
-    logging.debug('Nonce initialised: {}'.format(self.nonce))
-
-    if not configuration.account:
-      account_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
-      if account_req.status_code >= 400:
-        raise RuntimeError('newAccount returned HTTP code {}'.format(str(account_req.status_code)))
-      configuration.account = account_req.headers['location']
-      configuration.put()
-    self.account = configuration.account
-
-    logging.debug('ACME account: {}'.format(self.account))
+    logging.debug('ACME nonce initialised: {}'.format(self.nonce))
 
   def request(self, key, payload):
     logging.info('ACME request({}, {})'.format(key, payload))
@@ -89,7 +80,7 @@ class ACME():
        'nonce': self.nonce,
        'url': url
     }
-    if hasattr(self, 'account'):
+    if self.account:
       protected['kid'] = self.account
     else:
       # https://tools.ietf.org/html/rfc7638#section-3.2
@@ -151,8 +142,8 @@ class GAELE_StartHandler(GAELE_BaseHandler):
 
     configuration = configuration_key.get()
     if not configuration:
-      logging.info('Configuration init')
-      configuration = Configuration(id=configuration_key.id(), domains=['example.com'])
+      logging.info('configuration init')
+      configuration = Configuration(id=configuration_key.id())
       configuration.put()
 
     if not configuration.key:
@@ -162,6 +153,16 @@ class GAELE_StartHandler(GAELE_BaseHandler):
       key = RSA.generate(configuration.keysize)
       configuration.key = key.exportKey()
       configuration.put()
+
+    if not configuration.account:
+      acme = ACME(configuration)
+      account_req = acme.request('newAccount', { 'termsOfServiceAgreed': True })
+      if account_req.status_code >= 400:
+        raise RuntimeError('newAccount returned HTTP code {}'.format(str(account_req.status_code)))
+      configuration.account = account_req.headers['location']
+      configuration.put()
+
+    logging.info('account: {}'.format(configuration.account))
 
     self.response.set_status(204)
 
@@ -186,6 +187,11 @@ class GAELE_ChallengeHandler(GAELE_BaseHandler):
     super(GAELE_ChallengeHandler, self).get()
 
     configuration = configuration_key.get()
+
+    if len(configuration.domains) == 0:
+      raise RuntimeError('domains list is empty')
+
+    logging.info('domains: {}'.format(configuration.domains))
 
     acme = ACME(configuration)
     neworder_payload = {
