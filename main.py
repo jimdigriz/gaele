@@ -36,7 +36,7 @@ class Configuration(ndb.Model):
   directory = ndb.TextProperty(default=DIRECTORY_STAGING)
   keysize = ndb.IntegerProperty(default=2048, choices=[2048])
   period = ndb.IntegerProperty(default=0)
-  key = ndb.BlobProperty()
+  key = ndb.TextProperty()
   alg = ndb.TextProperty(default='RS256', choices=['RS256'])
   account = ndb.TextProperty()
   domains = ndb.TextProperty(default='')
@@ -224,7 +224,7 @@ class GAELE_StartHandler(GAELE_BaseHandler):
         raise RuntimeError('unsupported alg: {}'.format(configuration.alg))
 
       key = RSA.generate(configuration.keysize)
-      configuration.key = key.exportKey()
+      configuration.key = key.exportKey('PEM')
       configuration.put()
 
     if configuration.account:
