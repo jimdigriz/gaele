@@ -3,6 +3,7 @@ import logging
 import os
 import json
 import base64
+import binascii
 from datetime import datetime, timedelta
 from collections import OrderedDict
 from google.appengine.ext import ndb
@@ -14,7 +15,9 @@ from Crypto.Util import number
 from pyasn1.type import univ, char
 from pyasn1_modules import pem, rfc2314, rfc2459, rfc2986
 from pyasn1.codec.native.decoder import decode as native_decoder
+from pyasn1.codec.native.encoder import encode as native_encoder
 from pyasn1.codec.der.encoder import encode as der_encoder
+from pyasn1.codec.der.decoder import decode as der_decoder
 
 DIRECTORY_STAGING = 'https://acme-staging-v02.api.letsencrypt.org/directory'
 DIRECTORY = 'https://acme-v02.api.letsencrypt.org/directory'
@@ -140,10 +143,14 @@ class ACME():
 # https://github.com/jandd/python-pkiutils
 def csr(configuration):
   id_at_pkcs9_extension_request = univ.ObjectIdentifier('1.2.840.113549.1.9.14')
+  sha256WithRSAEncryption = univ.ObjectIdentifier('1.2.840.113549.1.1.11')
+
+  key = RSA.importKey(configuration.key)
+  signer = PKCS1_v1_5.new(key)
 
   py_csr = {
     'certificationRequestInfo': {
-      'version': 0,
+      'version': 2,
       'subject': {
         'rdnSequence': [
           [
@@ -154,22 +161,27 @@ def csr(configuration):
           ]
         ]
       },
-      'subjectPKInfo': {
-        'algorithm': {
-          'algorithm': '1.2.840.113549.1.1.1',
-          'parameters': '\x05\x00'
-        },
-        'subjectPublicKey': '0'
-      },
+      'subjectPKInfo': native_encoder(der_decoder(key.publickey().exportKey('DER'), rfc2314.SubjectPublicKeyInfo())[0]),
       'attributes': [
+        {
+          'type': id_at_pkcs9_extension_request,
+          'values': [
+            der_encoder(native_decoder([
+              {
+                'extnID': rfc2459.id_ce_subjectAltName,
+                'extnValue': der_encoder(native_decoder(map(lambda x: { 'dNSName': x }, configuration.domains_list), asn1Spec=rfc2314.SubjectAltName()))
+              }
+            ], asn1Spec=rfc2314.Extensions()))
+          ]
+        }
       ]
-    },
-    'signatureAlgorithm': {
-      'algorithm': '1.2.840.113549.1.1.4',
-      'parameters': '\x05\x00'
-    },
-    'signature': '0'
+    }
   }
+  py_csr['signatureAlgorithm'] = {
+    'algorithm': sha256WithRSAEncryption
+  }
+  hashvalue = SHA256.new(der_encoder(native_decoder(py_csr['certificationRequestInfo'], rfc2986.CertificationRequestInfo())))
+  py_csr['signature'] = bin(int(binascii.hexlify(signer.sign(hashvalue)), 16))
 
   csr = native_decoder(py_csr, asn1Spec=rfc2986.CertificationRequest())
 
