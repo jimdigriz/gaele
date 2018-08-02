@@ -19,7 +19,7 @@ ifeq ($(IKNOWWHATIAMDOING),)
 endif
 	rm -rf .$@
 	mkdir .$@
-	cp app.yaml cron.yaml main.py .$@
+	cp app.yaml cron.yaml appengine_config.py main.py .$@
 	pip install -t .$@/lib -r requirements.txt
 	cd .$@ && gcloud --project=$(PROJECT_ID) app deploy app.yaml \
 				--version $(VERSION_ID) \
