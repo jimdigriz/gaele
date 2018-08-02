@@ -34,7 +34,7 @@ You will also require `make` to be installed.
 
     make deploy PROJECT_ID=project-123456
 
-**N.B.** it is recommended you use a dedicated project unless your existing project does not use or plan to use either GAE or Datastore
+**N.B.** it is recommended you use a dedicated project unless your existing project space does not use or plan to use either GAE or the Datastore
 
 ## Configuration
 
@@ -71,7 +71,7 @@ These must not be edited and should be treated read-only:
 
 ## HTTP Server on GCE
 
-Once you have deployed to GAE, you need to configure your HTTP servers to proxy requests to the service:
+Once you have deployed to GAE, you need to configure your HTTP servers to proxy requests to the service]:
 
 ### nginx
 

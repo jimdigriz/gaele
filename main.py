@@ -7,11 +7,14 @@ from datetime import datetime, timedelta
 from collections import OrderedDict
 from google.appengine.ext import ndb
 from google.appengine.api import urlfetch
-
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
 from Crypto.Util import number
+from pyasn1.type import univ, char
+from pyasn1_modules import pem, rfc2314, rfc2459, rfc2986
+from pyasn1.codec.native.decoder import decode as native_decoder
+from pyasn1.codec.der.encoder import encode as der_encoder
 
 DIRECTORY_STAGING = 'https://acme-staging-v02.api.letsencrypt.org/directory'
 DIRECTORY = 'https://acme-v02.api.letsencrypt.org/directory'
@@ -33,7 +36,11 @@ class Configuration(ndb.Model):
   key = ndb.BlobProperty()
   alg = ndb.TextProperty(default='RS256', choices=['RS256'])
   account = ndb.TextProperty()
-  domains = ndb.TextProperty(default='example.com')
+  domains = ndb.TextProperty(default='')
+
+  def get_domains_list(self):
+    return map(unicode.strip, self.domains.split('\n'))
+  domains_list = property(get_domains_list)
 configuration_key = ndb.Key('Configuration', 'gaele.configuration')
 
 class ACME():
@@ -130,6 +137,51 @@ class ACME():
 
     return result
 
+# https://github.com/jandd/python-pkiutils
+def csr(configuration):
+  id_at_pkcs9_extension_request = univ.ObjectIdentifier('1.2.840.113549.1.9.14')
+
+  py_csr = {
+    'certificationRequestInfo': {
+      'version': 0,
+      'subject': {
+        'rdnSequence': [
+          [
+            {
+              'type': rfc2459.id_at_commonName,
+              'value': der_encoder(char.UTF8String(configuration.domains_list[0]))
+            }
+          ]
+        ]
+      },
+      'subjectPKInfo': {
+        'algorithm': {
+          'algorithm': '1.2.840.113549.1.1.1',
+          'parameters': '\x05\x00'
+        },
+        'subjectPublicKey': '0'
+      },
+      'attributes': [
+      ]
+    },
+    'signatureAlgorithm': {
+      'algorithm': '1.2.840.113549.1.1.4',
+      'parameters': '\x05\x00'
+    },
+    'signature': '0'
+  }
+
+  csr = native_decoder(py_csr, asn1Spec=rfc2986.CertificationRequest())
+
+  csr_der = der_encoder(csr)
+  csr_der_b64 = base64.b64encode(csr_der)
+
+  csr_pem = '-----BEGIN CERTIFICATE REQUEST-----\n'
+  csr_pem += '\n'.join([ csr_der_b64[i: i + 64] for i in range(0, len(csr_der_b64), 64) ]) + '\n'
+  csr_pem += '-----END CERTIFICATE REQUEST-----\n'
+
+  return csr_pem
+
 class GAELE_BaseHandler(webapp2.RequestHandler):
   def get(self):
     self.response.headers['x-request-log-id'] = os.environ.get('REQUEST_LOG_ID')
@@ -178,15 +230,53 @@ class GAELE_CronHandler(GAELE_BaseHandler):
   def get(self):
     super(GAELE_CronHandler, self).get()
 
+    if not 'x-appengine-cron' in self.request.headers:
+      logging.error('missing x-appengine-cron header')
+      self.response.set_status(403)
+      return
+
     configuration = configuration_key.get()
 
     if configuration.domains.split() == 0:
-      raise RuntimeError('domains list is empty')
+      logging.info('domains list is empty')
+      self.response.set_status(204)
+      return
 
-    if not 'x-appengine-cron' in self.request.headers:
-      raise RuntimeError('missing x-appengine-cron header')
+    logging.info('domains: {}'.format(configuration.domains))
 
-    self.response.write('le cron')
+#   acme = ACME(configuration)
+#   neworder_payload = {
+#     'identifiers': [
+#       {
+#         'type': 'dns',
+#         'value': domain
+#       } for domain in configuration.domains.split()
+#     ]
+#   }
+#   if configuration.period > 0:
+#     now = datetime.utcnow()
+#     now = now - timedelta(microseconds=now.microsecond)
+#     neworder_payload['notBefore'] = (now - timedelta(seconds=10)).isoformat() + 'Z'
+#     neworder_payload['notAfter'] = (now + timedelta(seconds=configuration.period)).isoformat() + 'Z'
+#   neworder_req = acme.request('newOrder', neworder_payload)
+#   if neworder_req.status_code != 201:
+#     raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
+#   neworder = json.loads(neworder_req.content)
+#   if not 'authorizations' in neworder:
+#     raise RuntimeError('newOrder returned no authorizations')
+#
+#   authz_req = acme.fetch(neworder['authorizations'][0], {
+#     'identifier': {
+#       'type': 'dns',
+#       'value': domain
+#     }
+#   })
+
+    ret = csr(configuration)
+
+    self.response.write(ret)
+
+    #self.response.write('le cron')
 
 class GAELE_ChallengeHandler(GAELE_BaseHandler):
   def get(self):
@@ -196,36 +286,6 @@ class GAELE_ChallengeHandler(GAELE_BaseHandler):
 
     if configuration.domains.split() == 0:
       raise RuntimeError('domains list is empty')
-
-    logging.info('domains: {}'.format(configuration.domains))
-
-    acme = ACME(configuration)
-    neworder_payload = {
-      'identifiers': [
-        {
-          'type': 'dns',
-          'value': domain
-        } for domain in configuration.domains.split()
-      ]
-    }
-    if configuration.period > 0:
-      now = datetime.utcnow()
-      now = now - timedelta(microseconds=now.microsecond)
-      neworder_payload['notBefore'] = (now - timedelta(seconds=10)).isoformat() + 'Z'
-      neworder_payload['notAfter'] = (now + timedelta(seconds=configuration.period)).isoformat() + 'Z'
-    neworder_req = acme.request('newOrder', neworder_payload)
-    if neworder_req.status_code != 201:
-      raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
-    neworder = json.loads(neworder_req.content)
-    if not 'authorizations' in neworder:
-      raise RuntimeError('newOrder returned no authorizations')
-
-#    authz_req = acme.fetch(neworder['authorizations'][0], {
-#      'identifier': {
-#        'type': 'dns',
-#        'value': domain
-#      }
-#    })
 
     self.response.write('le')
 
