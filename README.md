@@ -4,7 +4,7 @@
 
 This makes for a simple, fire-and-forget and cost effective solution when compared to other existing documented approaches described by the community.
 
-`GAELE` (Google App Engine - Let's Encrypt) is a version two client.
+`gaele` (Google App Engine - Let's Encrypt) is a version two client.
 
 ## Related Links
 
@@ -12,6 +12,9 @@ This makes for a simple, fire-and-forget and cost effective solution when compar
      * [`draft-ietf-acme-acme`](https://datatracker.ietf.org/doc/draft-ietf-acme-acme/)
      * [Boulder divergences from ACME](https://github.com/letsencrypt/boulder/blob/master/docs/acme-divergences.md)
  * [Google Cloud Platform (GCP)](https://cloud.google.com/)
+     * [`gcloud alpha compute ssl-certificates create`](https://cloud.google.com/sdk/gcloud/reference/alpha/compute/ssl-certificates/create) - managed certificates
+         * ['alpha'](https://cloud.google.com/sdk/docs/release-notes?hl=en#compute_engine_17)
+         * [Issue Tracker #62049778](https://issuetracker.google.com/issues/62049778)
      * [Google Cloud Load Balancer](https://cloud.google.com/load-balancing/)
      * [Google App Engine (GAE)](https://cloud.google.com/appengine/)
          * [Python on Google App Engine](https://cloud.google.com/appengine/docs/python/)
@@ -30,11 +33,26 @@ You will require the [Cloud SDK](https://cloud.google.com/appengine/docs/standar
 
 You will also require `make` to be installed.
 
+From the GCP perspective, you should have a deployment that has:
+
+ * HTTPS (or SSL) load-balancer, if you do not have a certificate use a self signed one (ignore the domain here, gaele will fix this later) and attach that to the load-balancer:
+       openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 1 -nodes -subj /CN=example.invalid
+       gcloud --project myproject-123456 compute ssl-certificates create mycert --certificate=cert.pem --private-key=key.pem
+ * service account:
+       gcloud --project myproject-123456 iam roles create gaele --permissions compute.sslCertificates.create,compute.sslCertificates.delete,compute.sslCertificates.get,compute.targetHttpsProxies.get,compute.targetHttpsProxies.setSslCertificates,compute.targetSslProxies.get,compute.targetSslProxies.setSslCertificates --stage GA
+       gcloud projects add-iam-policy-binding myproject-123456 --member serviceAccount:gaele-123456@appspot.gserviceaccount.com --role=projects/myproject-123456/roles/gaele
+
 # Deploy
 
-    make deploy PROJECT_ID=project-123456
+    openssl req -x509 -newkey rsa:512 -keyout key.pem -out cert.pem -days 1 -nodes -subj '/CN=example.com'
+
+    make deploy PROJECT_ID=gaele-123456
 
 **N.B.** it is recommended you use a dedicated project unless your existing project space does not use or plan to use either GAE or the Datastore
+
+Remember to active the `compute` API on the project you deploy to:
+
+    gcloud --project gaele-123456 services enable compute.googleapis.com
 
 ## Configuration
 
@@ -50,25 +68,6 @@ The 'gaele.configuration' key in the Datastore contains the following:
 
 After the deploy you should set `domains` to the list of domains you want to service and set `directory` to the production server URL.
 
-### Advanced
-
-Other properties are:
-
- * **`account`:** text of the URL to the account for this service
-     * typically this is not edited but needs to be blanked when amending `directory` if already set
- * **`alg` (default: 'RS256' [[only supported](https://gitlab.com/coremem/gaele/issues/2)]):** algorithm to use
- * **`keysize` (default: 2048):** key length of public key to generate
- * **`period` (default: 0):** validatity time in seconds to request for the certificate for
-     * **N.B.** Let's Encrypt does not support [`notBefore` or `notAfter`](https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-7.1.3) so this should be left set to `0`
-
-#### Informational
-
-These must not be edited and should be treated read-only:
-
- * **`created`:** datetime when the configuration was created
- * **`modified`:** datetime when the configuration was last modified
- * **`key`:** blob of key
-
 ## HTTP Server on GCE
 
 Once you have deployed to GAE, you need to configure your HTTP servers to proxy requests to the service]:
@@ -76,7 +75,7 @@ Once you have deployed to GAE, you need to configure your HTTP servers to proxy 
 ### nginx
 
     location /.well-known/acme-challenge/ {
-        proxy_set_header [YOUR_PROJECT_ID].appspot.com;
+        proxy_set_header host [YOUR_PROJECT_ID].appspot.com;
         proxy_pass http://[YOUR_PROJECT_ID].appspot.com;
     }
 

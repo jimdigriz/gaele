@@ -4,10 +4,12 @@ import os
 import json
 import base64
 import binascii
+import uuid
+from functools import partial
 from datetime import datetime, timedelta
 from collections import OrderedDict
 from google.appengine.ext import ndb
-from google.appengine.api import urlfetch
+from google.appengine.api import urlfetch, namespace_manager, app_identity
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
@@ -22,35 +24,36 @@ from pyasn1.codec.der.decoder import decode as der_decoder
 DIRECTORY_STAGING = 'https://acme-staging-v02.api.letsencrypt.org/directory'
 DIRECTORY = 'https://acme-v02.api.letsencrypt.org/directory'
 
-ALG2KEYTYPE = {
-  'RS256': 'RSA'
-}
+KEYSIZE = 2048
+ALG = 'RS256'
+KEYTYPE = 'RSA'
 
 def b64u_en(s):
   return base64.urlsafe_b64encode(s).rstrip('=')
 
 class Configuration(ndb.Model):
   _default_indexed = False
-  created = ndb.DateTimeProperty(auto_now_add=True)
-  modified = ndb.DateTimeProperty(auto_now=True)
-  directory = ndb.TextProperty(default=DIRECTORY_STAGING)
-  keysize = ndb.IntegerProperty(default=2048, choices=[2048])
-  period = ndb.IntegerProperty(default=0)
+  token = ndb.StringProperty(default=str(uuid.uuid4()), required=True)
+  directory = ndb.TextProperty(default=DIRECTORY_STAGING, required=True)
   key = ndb.TextProperty()
-  alg = ndb.TextProperty(default='RS256', choices=['RS256'])
-  account = ndb.TextProperty()
-  domains = ndb.TextProperty(default='')
+  project = ndb.StringProperty(default=app_identity.get_application_id(), required=True)
+  loadbalancer = ndb.StringProperty()
+  domains = ndb.TextProperty()
 
-  def get_domains_list(self):
-    return map(unicode.strip, self.domains.split('\n'))
-  domains_list = property(get_domains_list)
-configuration_key = ndb.Key('Configuration', 'gaele.configuration')
+  def to_list(key, self):
+    value = getattr(self, key)
+    if value:
+      return map(unicode.strip, getattr(self, key).split('\n'))
+    else:
+      return []
+  domains_list = property(partial(to_list, 'domains'))
+#namespace_manager.set_namespace('gaele')
+configuration_key = ndb.Key('Configuration', 'configuration')
 
 class ACME():
   def __init__(self, configuration):
     logging.info('ACME init')
 
-    self.alg = configuration.alg
     self.key = RSA.importKey(configuration.key)
     self.signer = PKCS1_v1_5.new(self.key)
 
@@ -72,14 +75,13 @@ class ACME():
     self.nonce = nonce_req.headers['replay-nonce']
     logging.debug('ACME nonce initialised: {}'.format(self.nonce))
 
-    # done here and not in StartHandler as it would make changing `directory` difficult
-    if not configuration.account:
-      account_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
-      if account_req.status_code >= 400:
-        raise RuntimeError('newAccount returned HTTP code {}'.format(str(account_req.status_code)))
-      configuration.account = account_req.headers['location']
-      configuration.put()
-      logging.info('ACME newAccount: {}'.format(configuration.account))
+    # done here and not in StartHandler as it would make changing `directory`/`key` difficult
+    account_req = self.request('newAccount', { 'termsOfServiceAgreed': True })
+    if account_req.status_code >= 400:
+      raise RuntimeError('newAccount returned HTTP code {}'.format(str(account_req.status_code)))
+    configuration.account = account_req.headers['location']
+    configuration.put()
+    logging.info('ACME newAccount: {}'.format(configuration.account))
     self.account = configuration.account
 
   def request(self, key, payload):
@@ -95,7 +97,7 @@ class ACME():
 
     # https://tools.ietf.org/html/draft-ietf-acme-acme-13#section-6.2
     protected = {
-       'alg': self.alg,
+       'alg': 'RS256',
        'nonce': self.nonce,
        'url': url
     }
@@ -105,7 +107,7 @@ class ACME():
       # https://tools.ietf.org/html/rfc7638#section-3.2
       protected['jwk'] = OrderedDict([
          ('e', b64u_en(number.long_to_bytes(self.key.e))),
-         ('kty', ALG2KEYTYPE[self.alg]),
+         ('kty', KEYTYPE),
          ('n', b64u_en(number.long_to_bytes(self.key.n)))
       ])
     protected_b64u = b64u_en(json.dumps(protected))
@@ -150,7 +152,7 @@ def csr(configuration):
 
   py_csr = {
     'certificationRequestInfo': {
-      'version': 2,
+      'version': 0,
       'subject': {
         'rdnSequence': [
           [
@@ -213,22 +215,16 @@ class GAELE_StartHandler(GAELE_BaseHandler):
   def get(self):
     super(GAELE_StartHandler, self).get()
 
-    configuration = configuration_key.get()
+    configuration = configuration_key.get(use_cache=False, use_memcache=False)
     if not configuration:
       logging.info('configuration init')
       configuration = Configuration(id=configuration_key.id())
       configuration.put()
 
     if not configuration.key:
-      if configuration.alg != 'RS256':
-        raise RuntimeError('unsupported alg: {}'.format(configuration.alg))
-
-      key = RSA.generate(configuration.keysize)
+      key = RSA.generate(KEYSIZE)
       configuration.key = key.exportKey('PEM')
       configuration.put()
-
-    if configuration.account:
-      logging.info('account: {}'.format(configuration.account))
 
     self.response.set_status(204)
 
@@ -242,64 +238,67 @@ class GAELE_CronHandler(GAELE_BaseHandler):
   def get(self):
     super(GAELE_CronHandler, self).get()
 
-    if not 'x-appengine-cron' in self.request.headers:
-      logging.error('missing x-appengine-cron header')
-      self.response.set_status(403)
-      return
+    configuration = configuration_key.get(use_cache=False, use_memcache=False)
 
-    configuration = configuration_key.get()
+    if not 'x-gaele-token' in self.request.headers or self.request.headers['x-gaele-token'] != configuration.token:
+      if not 'x-appengine-cron' in self.request.headers:
+        logging.error('missing x-appengine-cron header')
+        self.response.set_status(403)
+        return
 
-    if configuration.domains.split() == 0:
+    if len(configuration.domains_list) == 0:
       logging.info('domains list is empty')
       self.response.set_status(204)
       return
 
-    logging.info('domains: {}'.format(configuration.domains))
+    application_id = app_identity.get_application_id()
+    account_name = app_identity.get_service_account_name()
+    auth_token, _ = app_identity.get_access_token('https://www.googleapis.com/auth/cloud-platform')
 
-#   acme = ACME(configuration)
-#   neworder_payload = {
-#     'identifiers': [
-#       {
-#         'type': 'dns',
-#         'value': domain
-#       } for domain in configuration.domains.split()
-#     ]
-#   }
-#   if configuration.period > 0:
-#     now = datetime.utcnow()
-#     now = now - timedelta(microseconds=now.microsecond)
-#     neworder_payload['notBefore'] = (now - timedelta(seconds=10)).isoformat() + 'Z'
-#     neworder_payload['notAfter'] = (now + timedelta(seconds=configuration.period)).isoformat() + 'Z'
-#   neworder_req = acme.request('newOrder', neworder_payload)
-#   if neworder_req.status_code != 201:
-#     raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
-#   neworder = json.loads(neworder_req.content)
-#   if not 'authorizations' in neworder:
-#     raise RuntimeError('newOrder returned no authorizations')
-#
-#   authz_req = acme.fetch(neworder['authorizations'][0], {
-#     'identifier': {
-#       'type': 'dns',
-#       'value': domain
-#     }
-#   })
+    logging.info(application_id)
+    logging.info(account_name)
+    logging.info(auth_token)
+    logging.info(configuration.project)
 
-    ret = csr(configuration)
+    lb_type, lb = configuration.loadbalancer.split(':', 1)
+    lb_type = lb_type.capitalize()
 
-    self.response.write(ret)
+    response = urlfetch.fetch('https://www.googleapis.com/compute/v1/projects/{0}/global/target{1}Proxies/{2}'.format(configuration.project, lb_type, lb), headers={ 'Authorization': 'Bearer {}'.format(auth_token) })
+    logging.info(response.content)
 
-    #self.response.write('le cron')
+    return
+
+    acme = ACME(configuration)
+    neworder_payload = {
+      'identifiers': [
+        {
+          'type': 'dns',
+          'value': domain
+        } for domain in configuration.domains_list
+      ]
+    }
+    neworder_req = acme.request('newOrder', neworder_payload)
+    if neworder_req.status_code != 201:
+      raise RuntimeError('newOrder returned HTTP code {}'.format(str(neworder_req.status_code)))
+    neworder = json.loads(neworder_req.content)
+    if not 'authorizations' in neworder:
+      raise RuntimeError('newOrder returned no authorizations')
+
+    authz_req = acme.fetch(neworder['authorizations'][0], {
+      'identifier': {
+        'type': 'dns',
+        'value': domain
+      }
+    })
 
 class GAELE_ChallengeHandler(GAELE_BaseHandler):
   def get(self):
     super(GAELE_ChallengeHandler, self).get()
 
-    configuration = configuration_key.get()
+    configuration = configuration_key.get(use_cache=False, use_memcache=False)
 
-    if configuration.domains.split() == 0:
+    if len(configuration.domains_list) == 0:
       raise RuntimeError('domains list is empty')
-
-    self.response.write('le')
 
 app = webapp2.WSGIApplication([
   (r'^/_ah/start$', GAELE_StartHandler),
