@@ -37,7 +37,7 @@ You will also require `make` to be installed.
 
 From the GCP perspective, you should have a deployment that has:
 
- * HTTPS (or SSL) load-balancer, if you do not have a certificate use a self signed one (ignore the domain here, gaele will fix this later) and attach that to the load-balancer:
+ * HTTPS (or SSL) load balancer, if you do not have a certificate use a self signed one (ignore the domain here, gaele will fix this later) and attach that to the load balancer:
 
          openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 1 -nodes -subj /CN=example.invalid
          gcloud --project myproject-123456 compute ssl-certificates create mycert --certificate=cert.pem --private-key=key.pem
@@ -65,10 +65,21 @@ The 'gaele.configuration' key in the Datastore contains the following:
  * **`directory` (default: staging):** URL pointing to the configuration directory:
      * **[staging](https://letsencrypt.org/docs/staging-environment/) [default]:** `https://acme-staging-v02.api.letsencrypt.org/directory`
      * **production:** `https://acme-v02.api.letsencrypt.org/directory`
- * **`domains` (default: `example.com`):** space seperated list of domains to run the service for
+ * **`domains` (default: empty):** newline seperated list of domains to run the service for
      * safe to edit throughout the lifecycle of the deployment without impact
+ * **`project` (default: project deployed to):** project that contains the load balancer
+ * **`loadbalancer` (default: empty):** newline seperated list `[type]:[name]` of load balancers to configure
+     * `https:mylb`: would configure a [Target (HTTPS) Proxy](https://cloud.google.com/load-balancing/docs/target-proxies)
+     * `ssl:mylb`: would configure a [Target SSL Proxy](https://cloud.google.com/load-balancing/docs/ssl/setting-up-ssl)
+ * **`token` (default: [UUIDv4](https://en.wikipedia.org/wiki/Universally_unique_identifier#Version_4_(random))):** used via `x-gaele-token` to bypass [cron security check](https://cloud.google.com/appengine/docs/flexible/python/scheduling-jobs-with-cron-yaml#validating_cron_requests); typically you never need to change this
 
 After the deploy you should set `domains` to the list of domains you want to service and set `directory` to the production server URL.
+
+### Advanced
+
+These should be left un-touched, as they are used internally:
+
+ * **`key`:** PEM of the private key
 
 ## HTTP Server on GCE
 

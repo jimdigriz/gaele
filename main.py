@@ -37,8 +37,8 @@ class Configuration(ndb.Model):
   directory = ndb.TextProperty(default=DIRECTORY_STAGING, required=True)
   key = ndb.TextProperty()
   project = ndb.StringProperty(default=app_identity.get_application_id(), required=True, indexed=False)
-  loadbalancer = ndb.StringProperty(indexed=False)
   # we have to use 'default' otherwise the dev appserver refuses to let you update
+  loadbalancer = ndb.StringProperty(default='', indexed=False)
   domains = ndb.TextProperty(default='', required=True)
 
   def domains_to_list(self):
