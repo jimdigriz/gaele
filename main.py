@@ -38,15 +38,12 @@ class Configuration(ndb.Model):
   key = ndb.TextProperty()
   project = ndb.StringProperty(default=app_identity.get_application_id(), required=True, indexed=False)
   loadbalancer = ndb.StringProperty(indexed=False)
-  domains = ndb.TextProperty()
+  # we have to use 'default' otherwise the dev appserver refuses to let you update
+  domains = ndb.TextProperty(default='', required=True)
 
-  def to_list(key, self):
-    value = getattr(self, key)
-    if value:
-      return map(unicode.strip, getattr(self, key).split('\n'))
-    else:
-      return []
-  domains_list = property(partial(to_list, 'domains'))
+  def domains_to_list(self):
+    return map(unicode.strip, self.domains.split('\n'))
+  domains_list = property(domains_to_list)
 #namespace_manager.set_namespace('gaele')
 configuration_key = ndb.Key('Configuration', 'configuration')
 
