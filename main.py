@@ -33,11 +33,11 @@ def b64u_en(s):
 
 class Configuration(ndb.Model):
   _default_indexed = False
-  token = ndb.StringProperty(default=str(uuid.uuid4()), required=True)
+  token = ndb.StringProperty(default=str(uuid.uuid4()), required=True, indexed=False)
   directory = ndb.TextProperty(default=DIRECTORY_STAGING, required=True)
   key = ndb.TextProperty()
-  project = ndb.StringProperty(default=app_identity.get_application_id(), required=True)
-  loadbalancer = ndb.StringProperty()
+  project = ndb.StringProperty(default=app_identity.get_application_id(), required=True, indexed=False)
+  loadbalancer = ndb.StringProperty(indexed=False)
   domains = ndb.TextProperty()
 
   def to_list(key, self):
@@ -215,18 +215,23 @@ class GAELE_StartHandler(GAELE_BaseHandler):
   def get(self):
     super(GAELE_StartHandler, self).get()
 
+    code = 204
+
     configuration = configuration_key.get(use_cache=False, use_memcache=False)
     if not configuration:
       logging.info('configuration init')
       configuration = Configuration(id=configuration_key.id())
       configuration.put()
+      code = 201
 
     if not configuration.key:
       key = RSA.generate(KEYSIZE)
       configuration.key = key.exportKey('PEM')
       configuration.put()
+      if code == 204:
+        code = 200
 
-    self.response.set_status(204)
+    self.response.set_status(code)
 
 class GAELE_NOPHandler(GAELE_BaseHandler):
   def get(self):
@@ -305,4 +310,4 @@ app = webapp2.WSGIApplication([
   (r'^/_ah/.*$', GAELE_NOPHandler),
   (r'^/cron$', GAELE_CronHandler),
   (r'^/\.well-known/acme-challenge/.*$', GAELE_ChallengeHandler),
-], debug=True)
+])

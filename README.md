@@ -6,6 +6,8 @@ This makes for a simple, fire-and-forget and cost effective solution when compar
 
 `gaele` (Google App Engine - Let's Encrypt) is a version two client.
 
+**N.B.** this project is still non-functional and under development
+
 ## Related Links
 
  * [Let's Encrypt (LE)](https://letsencrypt.org/)
@@ -43,8 +45,6 @@ From the GCP perspective, you should have a deployment that has:
        gcloud projects add-iam-policy-binding myproject-123456 --member serviceAccount:gaele-123456@appspot.gserviceaccount.com --role=projects/myproject-123456/roles/gaele
 
 # Deploy
-
-    openssl req -x509 -newkey rsa:512 -keyout key.pem -out cert.pem -days 1 -nodes -subj '/CN=example.com'
 
     make deploy PROJECT_ID=gaele-123456
 
