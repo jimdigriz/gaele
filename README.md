@@ -60,7 +60,7 @@ Remember to active the `compute` API on the project you deploy to:
 
 Configuration of the project is maintained through a [Google Datastore](https://cloud.google.com/appengine/docs/standard/python/datastore/) object with the key `gaele.configuration`.
 
-The 'gaele.configuration' key in the Datastore contains the following:
+The `configuration` key in the Datastore contains the following:
 
  * **`directory` (default: staging):** URL pointing to the configuration directory:
      * **[staging](https://letsencrypt.org/docs/staging-environment/) [default]:** `https://acme-staging-v02.api.letsencrypt.org/directory`
