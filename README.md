@@ -38,11 +38,11 @@ You will also require `make` to be installed.
 From the GCP perspective, you should have a deployment that has:
 
  * HTTPS (or SSL) load-balancer, if you do not have a certificate use a self signed one (ignore the domain here, gaele will fix this later) and attach that to the load-balancer:
-       openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 1 -nodes -subj /CN=example.invalid
-       gcloud --project myproject-123456 compute ssl-certificates create mycert --certificate=cert.pem --private-key=key.pem
+         openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 1 -nodes -subj /CN=example.invalid
+         gcloud --project myproject-123456 compute ssl-certificates create mycert --certificate=cert.pem --private-key=key.pem
  * service account:
-       gcloud --project myproject-123456 iam roles create gaele --permissions compute.sslCertificates.create,compute.sslCertificates.delete,compute.sslCertificates.get,compute.targetHttpsProxies.get,compute.targetHttpsProxies.setSslCertificates,compute.targetSslProxies.get,compute.targetSslProxies.setSslCertificates --stage GA
-       gcloud projects add-iam-policy-binding myproject-123456 --member serviceAccount:gaele-123456@appspot.gserviceaccount.com --role=projects/myproject-123456/roles/gaele
+         gcloud --project myproject-123456 iam roles create gaele --permissions compute.sslCertificates.create,compute.sslCertificates.delete,compute.sslCertificates.get,compute.targetHttpsProxies.get,compute.targetHttpsProxies.setSslCertificates,compute.targetSslProxies.get,compute.targetSslProxies.setSslCertificates --stage GA
+         gcloud projects add-iam-policy-binding myproject-123456 --member serviceAccount:gaele-123456@appspot.gserviceaccount.com --role=projects/myproject-123456/roles/gaele
 
 # Deploy
 
